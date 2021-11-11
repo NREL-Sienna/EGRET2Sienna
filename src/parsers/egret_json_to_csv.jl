@@ -4,18 +4,6 @@
 # October 2021
 # Script to generate csv's from EGRET System JSON
 # Generate component CSV SIIP tabular parser expects from EGRET System JSON
-######################################################################################
-# Required Packages
-#####################################################################################
-import JSON
-import DataFrames
-import CSV
-import Dates
-#####################################################################################
-# Read EGRET System JSON
-#####################################################################################
-Location_1 = "Day_Ahead_Model_2020-01-01.json"; 
-EGRET_json = JSON.parsefile(Location_1);
 #####################################################################################
 # Helper Functions
 # Function to get p_max and p_min of Generator
@@ -486,7 +474,6 @@ end
 #####################################################################################
 # Functions to parse EGRET Bus
 # Note: Load MW and Load MVAR assigned as max of the time series data.
-# **TODO: Process time series of loads
 #####################################################################################
 function parse_EGRET_bus(components::Dict{String,Any},loads::Dict{String, Any},dir_name::String;shunt::Union{Nothing, Dict{String, Any}} = nothing)
     comp_dict = Dict()
@@ -610,7 +597,6 @@ end
 # Functions to parse EGRET Generator
 # **Note EGRET doesn't handle CSP units. SO, if there are any CSP units in the root dataset,
 # they will not show up in the converted PSY System!
-# **TODO: Process time series data of Hydro and Renewable
 #####################################################################################
 function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{Any,Any},dir_name::String)
     comp_dict = Dict()
@@ -678,32 +664,34 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
         mkpath(dir_name)
     end
     
-    # Flags and variable initialization for time series handling
-    load_ts_flag = false
-    gen_ts_flag = false
-    area_mapping_dict = nothing
-
-    for comp_type in keys(EGRET_json["elements"])
-        
-        bus_mapping_dict, area_mapping_dict, load_ts_flag = 
-        if (comp_type ==  "bus")
-            if ("shunt" in keys(EGRET_json["elements"]))
-                parse_EGRET_bus(EGRET_json["elements"][comp_type],EGRET_json["elements"]["load"],dir_name,shunt = EGRET_json["elements"]["shunt"])
-            else
-                parse_EGRET_bus(EGRET_json["elements"][comp_type],EGRET_json["elements"]["load"],dir_name)
-            end
+    # Parsing different elements in EGRET System
+    # Bus
+    bus_mapping_dict, area_mapping_dict, load_ts_flag = 
+    if ("bus" in keys(EGRET_json["elements"]))
+        if ("shunt" in keys(EGRET_json["elements"]))
+            parse_EGRET_bus(EGRET_json["elements"]["bus"],EGRET_json["elements"]["load"],dir_name,shunt = EGRET_json["elements"]["shunt"])
+        else
+            parse_EGRET_bus(EGRET_json["elements"]["bus"],EGRET_json["elements"]["load"],dir_name)
         end
-
-        if (comp_type ==  "branch")
-            parse_EGRET_branch(EGRET_json["elements"][comp_type],bus_mapping_dict,dir_name)
-        end
-
-        gen_ts_flag = 
-        if (comp_type ==  "generator")
-            parse_EGRET_generator(EGRET_json["elements"][comp_type],bus_mapping_dict,dir_name)
-        end
+    else
+        error("No buses in the EGRET System JSON")
     end
-    
+
+    # Branch
+    if ("branch" in keys(EGRET_json["elements"]))
+        parse_EGRET_branch(EGRET_json["elements"]["branch"],bus_mapping_dict,dir_name)
+    else
+        error("No branches in the EGRET System JSON")
+    end
+
+    # Generator
+    gen_ts_flag = 
+    if ("generator" in keys(EGRET_json["elements"]))
+        parse_EGRET_generator(EGRET_json["elements"]["generator"],bus_mapping_dict,dir_name)
+    else
+        error("No generators in the EGRET System JSON")
+    end
+
     # Calling time series processing functions
     if (load_ts_flag && gen_ts_flag)
         time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],loads = EGRET_json["elements"]["load"],gen_components=EGRET_json["elements"]["generator"],
