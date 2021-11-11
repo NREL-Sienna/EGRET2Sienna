@@ -27,6 +27,7 @@ Manifest.toml
 *.DS_Store
 
 # Folders
-New Results/
-Old Results/
-Converted_CSV_Files/
+data/Converted_CSV_Files
+
+# Files (EGRET System Files)
+*.json 
