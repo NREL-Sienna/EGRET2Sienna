@@ -61,9 +61,9 @@ generator:
 - {custom_name: ramp_q, name: ramp_limits, unit_system: natural_units}
 - {custom_name: Start Heat Cold MBTU, name: startup_heat_cold_cost}
 - {custom_name: HR_avg_0, name: heat_rate_avg_0}
-- {custom_name: HR_incr_1, name: heat_rate_incr_1}
-- {custom_name: HR_incr_2, name: heat_rate_incr_2}
-- {custom_name: HR_incr_3, name: heat_rate_incr_3}
+- {custom_name: HR_avg_1, name: heat_rate_incr_1}
+- {custom_name: HR_avg_2, name: heat_rate_incr_2}
+- {custom_name: HR_avg_3, name: heat_rate_incr_3}
 # - {custom_name: HR_incr_4, name: heat_rate_incr_4} - not available from EGRET JSON
 - {custom_name: output_pct_0, name: output_point_0, unit_system: device_base}
 - {custom_name: output_pct_1, name: output_point_1, unit_system: device_base}

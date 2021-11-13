@@ -15,6 +15,8 @@ module EGRET2SIIP
 # Exports
 #################################################################################
 export parse_EGRET_JSON
+export parse_tabular_data
+export EGRET_TO_PSY
 #################################################################################
 # Imports
 #################################################################################
@@ -22,8 +24,11 @@ import JSON
 import DataFrames
 import CSV
 import Dates
+import PowerSystems
 #################################################################################
 # Includes
 #################################################################################
 include("parsers/egret_json_to_csv.jl")
+include("main/parse_tabular_data.jl")
+include("main/egret_to_psy.jl")
 end

@@ -72,8 +72,8 @@ function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, 
                         HR_temp= (fuel_dict["values"][i][2]/fuel_dict["values"][i][1])*1000
                         push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
                     else
-                        HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
-                        push!(comp_dict["HR_avg_$(i-1)"],fuel_dict["values"][i][2])
+                        HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i-1][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
+                        push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
                     end  
                 end
                 for i in 1+length(fuel_dict["values"]):num_data_points
@@ -87,8 +87,8 @@ function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, 
                         HR_temp= (fuel_dict["values"][i][2]/fuel_dict["values"][i][1])*1000
                         push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
                     else
-                        HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
-                        push!(comp_dict["HR_avg_$(i-1)"],fuel_dict["values"][i][2])
+                        HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i-1][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
+                        push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
                     end  
                 end
             end 
@@ -803,6 +803,6 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
 
     @info "Successfully generated CSV files compatible with SIIP PSY tabular data parser here : $(dir_name)."
 
-    return dir_name
+    return dir_name, EGRET_json["system"]["baseMVA"]
 end
 
