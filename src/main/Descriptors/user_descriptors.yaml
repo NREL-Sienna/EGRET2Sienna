@@ -1,23 +1,23 @@
 branch:
-- {custom_name: UID, name: name}
-- {custom_name: From Bus, name: connection_points_from}
-- {custom_name: To Bus, name: connection_points_to}
-- {custom_name: R, name: r, unit_system: device_base}
-- {custom_name: X, name: x, unit_system: device_base}
-- {custom_name: B, name: primary_shunt, unit_system: device_base}
-- {custom_name: Cont Rating, name: rate, unit_system: natural_units}
+- {custom_name: Name, name: name}
+- {custom_name: from_bus, name: connection_points_from}
+- {custom_name: to_bus, name: connection_points_to}
+- {custom_name: resistance, name: r, unit_system: device_base}
+- {custom_name: reactance, name: x, unit_system: device_base}
+- {custom_name: charging_susceptance, name: primary_shunt, unit_system: device_base}
+- {custom_name: rating_long_term, name: rate, unit_system: natural_units}
 - {custom_name: Tr Ratio, name: tap}
 bus:
-- {custom_name: Bus ID, name: bus_id}
-- {custom_name: Bus Name, name: name}
-- {custom_name: Area, name: area}
-- {custom_name: Zone, name: zone}
-- {custom_name: BaseKV, name: base_voltage}
-- {custom_name: Bus Type, name: bus_type}
-- {custom_name: V Mag, name: voltage, unit_system: device_base}
-- {custom_name: V Angle, name: angle, unit: degree}
+- {custom_name: id, name: bus_id}
+- {custom_name: Name, name: name}
+- {custom_name: area, name: area}
+- {custom_name: zone, name: zone}
+- {custom_name: base_kv, name: base_voltage}
+- {custom_name: matpower_bustype, name: bus_type}
+- {custom_name: vm, name: voltage, unit_system: device_base}
+- {custom_name: va, name: angle, unit: degree}
 - {custom_name: MW Shunt G, name: mw_shunt_g}
-- {custom_name: MVAR Shunt B, name: mvar_shut_b}
+- {custom_name: MVAR Shunt, name: mvar_shut_b}
 - {custom_name: MW Load, name: max_active_power, unit_system: natural_units}
 - {custom_name: MVAR Load, name: max_reactive_power, unit_system: natural_units}
 - {custom_name: MW Load, name: active_power, unit_system: natural_units}
@@ -46,47 +46,47 @@ dc_branch:
 - {custom_name: MW Load, name: max_reactive_power_limit_to}
 
 generator:
-- {custom_name: GEN UID, name: name}
-- {custom_name: Bus ID, name: bus_id}
-- {custom_name: Fuel, name: fuel}
-- {custom_name: Fuel Price $/MMBTU, name: fuel_price}
-- {custom_name: MW Inj, name: active_power, unit_system: natural_units}
-- {custom_name: MVAR Inj, name: reactive_power, unit_system natural_units}
-- {custom_name: PMax MW, name: active_power_limits_max, unit_system: natural_units}
-- {custom_name: PMin MW, name: active_power_limits_min, unit_system: natural_units}
-- {custom_name: QMax MVAR, name: reactive_power_limits_max, unit_system: natural_units}
-- {custom_name: QMin MVAR, name: reactive_power_limits_min, unit_system: natural_units}
-- {custom_name: Min Down Time Hr, name: min_down_time}
-- {custom_name: Min Up Time Hr, name: min_up_time}
-- {custom_name: Ramp Rate MW/Min, name: ramp_limits, unit_system: natural_units}
+- {custom_name: Name, name: name}
+- {custom_name: bus, name: bus_id}
+- {custom_name: fuel, name: fuel}
+- {custom_name: fuel_cost, name: fuel_price}
+- {custom_name: pg, name: active_power, unit_system: natural_units}
+- {custom_name: qg, name: reactive_power, unit_system natural_units}
+- {custom_name: p_max, name: active_power_limits_max, unit_system: natural_units}
+- {custom_name: p_min, name: active_power_limits_min, unit_system: natural_units}
+- {custom_name: q_max, name: reactive_power_limits_max, unit_system: natural_units}
+- {custom_name: q_min, name: reactive_power_limits_min, unit_system: natural_units}
+- {custom_name: min_down_time, name: min_down_time}
+- {custom_name: min_up_time, name: min_up_time}
+- {custom_name: ramp_q, name: ramp_limits, unit_system: natural_units}
 - {custom_name: Start Heat Cold MBTU, name: startup_heat_cold_cost}
 - {custom_name: HR_avg_0, name: heat_rate_avg_0}
 - {custom_name: HR_incr_1, name: heat_rate_incr_1}
 - {custom_name: HR_incr_2, name: heat_rate_incr_2}
 - {custom_name: HR_incr_3, name: heat_rate_incr_3}
-- {custom_name: HR_incr_4, name: heat_rate_incr_4}
-- {custom_name: Output_pct_0, name: output_point_0, unit_system: device_base}
-- {custom_name: Output_pct_1, name: output_point_1, unit_system: device_base}
-- {custom_name: Output_pct_2, name: output_point_2, unit_system: device_base}
-- {custom_name: Output_pct_3, name: output_point_3, unit_system: device_base}
-- {custom_name: Output_pct_4, name: output_point_4, unit_system: device_base}
-- {custom_name: Base MVA, name: base_mva}
-- {custom_name: Non Fuel Shutdown Cost $, name: shutdown_cost}
-- {custom_name: Unit Type, name: unit_type}
-- {custom_name: Category, name: category}
+# - {custom_name: HR_incr_4, name: heat_rate_incr_4} - not available from EGRET JSON
+- {custom_name: output_pct_0, name: output_point_0, unit_system: device_base}
+- {custom_name: output_pct_1, name: output_point_1, unit_system: device_base}
+- {custom_name: output_pct_2, name: output_point_2, unit_system: device_base}
+- {custom_name: output_pct_3, name: output_point_3, unit_system: device_base}
+# - {custom_name: Output_pct_4, name: output_point_4, unit_system: device_base} - not available from EGRET JSON
+- {custom_name: mbase, name: base_mva}
+- {custom_name: shutdown_cost, name: shutdown_cost}
+- {custom_name: unit_type, name: unit_type}
+- {custom_name: category, name: category}
 - {custom_name: Start Time Cold Hr, name: cold_start_time}
 - {custom_name: Start Time Warm Hr, name: warm_start_time}
 - {custom_name: Start Time Hot Hr, name: hot_start_time}
-- {custom_name: Startup Ramp Rate MW/min, name: startup_ramp, unit_system: natural_units}
-- {custom_name: Shutdown Ramp Rate MW/min, name: shutdown_ramp, unit_system: natural_units}
-- {custom_name: Status at Start, name: status_at_start}
-- {custom_name: Time at Status, name: time_at_status}
-- {custom_name: Start Cost Cold, name: cold_start_cost}
-- {custom_name: Start Cost Warm, name: warm_start_cost}
-- {custom_name: Start Cost Hot, name: hot_start_cost}
-- {custom_name: Must Run, name: must_run}
-- {custom_name: FOR, name: fotr}   # Outage Information Fields
-- {custom_name: MTTR Hr, name: mttr} # Outage Information Fields
+#- {custom_name: Startup Ramp Rate MW/min, name: startup_ramp, unit_system: natural_units} - not available from EGRET JSON and source tabular data
+#- {custom_name: Shutdown Ramp Rate MW/min, name: shutdown_ramp, unit_system: natural_units} -  not available from EGRET JSON and source tabular data
+- {custom_name: initial_p_output, name: status_at_start}
+- {custom_name: initial_status, name: time_at_status}
+#- {custom_name: Start Cost Cold, name: cold_start_cost} - not available from EGRET JSON and source tabular data
+#- {custom_name: Start Cost Warm, name: warm_start_cost} - not available from EGRET JSON and source tabular data
+#- {custom_name: Start Cost Hot, name: hot_start_cost} - not available from EGRET JSON and source tabular data
+#- {custom_name: Must Run, name: must_run} - not available from EGRET JSON and source tabular data
+#- {custom_name: FOR, name: fotr}   # Outage Information Fields - not available from EGRET JSON
+# - {custom_name: MTTR Hr, name: mttr} # Outage Information Fields - not available from EGRET JSON
 load: []
 reserves:
 - {custom_name: Reserve Product, name: name}
