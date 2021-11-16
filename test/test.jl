@@ -22,4 +22,4 @@ location, base_MVA = EGRET2SIIP.parse_EGRET_JSON(EGRET_json)
 psy_sys = EGRET2SIIP.parse_tabular_data(location,base_MVA)
 
 #           (or)
-psy_sys = EGRET2SIIP.parse_tabular_data(location,base_MVA)
+psy_sys = EGRET2SIIP.EGRET_TO_PSY(EGRET_json)

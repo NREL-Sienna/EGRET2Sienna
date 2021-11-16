@@ -151,6 +151,7 @@ end
 #####################################################################################
 function make_HYDRO_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
    
+    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     df = DataFrames.DataFrame()
 
     df[!,"DateTime"] = time_stamps
@@ -166,12 +167,13 @@ function make_HYDRO_time_series(time_stamps::Vector{Dates.DateTime},dir_name::St
     # Pointers Dict
     num_components = length(comp_names)
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"Category" =>fill("Generator",num_components))
-    push!(pointers_dict,"Object" =>comp_names)
-    push!(pointers_dict,"Parameter" =>fill("p_max",num_components))
-    push!(pointers_dict,"Scaling Factor" =>fill(1,num_components))
-    push!(pointers_dict,"Data File" =>fill(csv_path,num_components))
+    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
+    push!(pointers_dict,"category" =>fill("Generator",num_components))
+    push!(pointers_dict,"component_name" =>comp_names)
+    push!(pointers_dict,"name" =>fill("p_max",num_components))
+    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
+    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
 
     return pointers_dict
 end
@@ -180,6 +182,7 @@ end
 #####################################################################################
 function make_PV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
     
+    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     df = DataFrames.DataFrame()
 
     df[!,"DateTime"] = time_stamps
@@ -195,12 +198,13 @@ function make_PV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::Strin
     # Pointers Dict
     num_components = length(comp_names)
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"Category" =>fill("Generator",num_components))
-    push!(pointers_dict,"Object" =>comp_names)
-    push!(pointers_dict,"Parameter" =>fill("p_max",num_components))
-    push!(pointers_dict,"Scaling Factor" =>fill(1,num_components))
-    push!(pointers_dict,"Data File" =>fill(csv_path,num_components))
+    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
+    push!(pointers_dict,"category" =>fill("Generator",num_components))
+    push!(pointers_dict,"component_name" =>comp_names)
+    push!(pointers_dict,"name" =>fill("p_max",num_components))
+    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
+    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
 
     return pointers_dict
 end
@@ -208,6 +212,8 @@ end
 # Make RTPV time series CSV
 #####################################################################################
 function make_RTPV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
+    
+    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     df = DataFrames.DataFrame()
 
     df[!,"DateTime"] = time_stamps
@@ -224,12 +230,13 @@ function make_RTPV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::Str
     # Pointers Dict
     num_components = length(comp_names)
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"Category" =>fill("Generator",num_components))
-    push!(pointers_dict,"Object" =>comp_names)
-    push!(pointers_dict,"Parameter" =>fill("p_max",num_components))
-    push!(pointers_dict,"Scaling Factor" =>fill(1,num_components))
-    push!(pointers_dict,"Data File" =>fill(csv_path,num_components))
+    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
+    push!(pointers_dict,"category" =>fill("Generator",num_components))
+    push!(pointers_dict,"component_name" =>comp_names)
+    push!(pointers_dict,"name" =>fill("p_max",num_components))
+    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
+    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
 
     return pointers_dict
 end
@@ -238,6 +245,7 @@ end
 #####################################################################################
 function make_WIND_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
 
+    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     df = DataFrames.DataFrame()
 
     df[!,"DateTime"] = time_stamps
@@ -250,17 +258,18 @@ function make_WIND_time_series(time_stamps::Vector{Dates.DateTime},dir_name::Str
     csv_path = joinpath(dir_name,"DAY_AHEAD_wind.csv")
     CSV.write(csv_path, df,writeheader = true)
 
-     # Pointers Dict
-     num_components = length(comp_names)
-     pointers_dict = Dict()
-     push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_components))
-     push!(pointers_dict,"Category" =>fill("Generator",num_components))
-     push!(pointers_dict,"Object" =>comp_names)
-     push!(pointers_dict,"Parameter" =>fill("p_max",num_components))
-     push!(pointers_dict,"Scaling Factor" =>fill(1,num_components))
-     push!(pointers_dict,"Data File" =>fill(csv_path,num_components))
+    # Pointers Dict
+    num_components = length(comp_names)
+    pointers_dict = Dict()
+    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
+    push!(pointers_dict,"category" =>fill("Generator",num_components))
+    push!(pointers_dict,"component_name" =>comp_names)
+    push!(pointers_dict,"name" =>fill("p_max",num_components))
+    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
+    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
  
-     return pointers_dict
+    return pointers_dict
 end
 #####################################################################################
 # Parse time series data
@@ -272,6 +281,8 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     #Time stamp processing
     date_format = Dates.DateFormat("Y-m-d H:M")
     time_stamps = Dates.DateTime.(system["time_keys"],date_format)
+
+    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     # Make time series data folder
     
     ts_dir_name = joinpath(dir_name,"timeseries_data_files")
@@ -313,18 +324,20 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     # Pointers Dict
     num_areas = length(keys(area_bus_mapping_dict))
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_areas))
-    push!(pointers_dict,"Category" =>fill("Reserve",num_areas))
-    push!(pointers_dict,"Object" =>object_names)
-    push!(pointers_dict,"Parameter" =>fill("Requirement",num_areas))
-    push!(pointers_dict,"Scaling Factor" =>fill(1,num_areas))
-    push!(pointers_dict,"Data File" =>data_files)
+    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_areas))
+    push!(pointers_dict,"category" =>fill("Reserve",num_areas))
+    push!(pointers_dict,"component_name" =>object_names)
+    push!(pointers_dict,"name" =>fill("Requirement",num_areas))
+    push!(pointers_dict,"normalization_factor" =>fill(1.0,num_areas))
+    push!(pointers_dict,"data_file" =>data_files)
+    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_areas))
 
     append!(df_ts_pointer,pointers_dict)
 
     # Reserves Metadata Dict
     reserves_metadata_dict = Dict()
     gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components),"fuel","None").*" ".*get.(values(gen_components),"unit_type","None")) if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
+    gen_fuel_unit_types = "("*join(gen_fuel_unit_types,",")*")"
     push!(reserves_metadata_dict, "Reserve Product"=>object_names)
     push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
     push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
@@ -342,19 +355,25 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
         push!(reserve_dict, string(idx) => val)
     end
     max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"DateTime" =>time_stamps[1])
+    year_value = Dates.Year(first(time_stamps)).value
+    month_value = Dates.Month(first(time_stamps)).value
+    day_value = Dates.Day(first(time_stamps)).value
+    push!(reserve_dict,"Year" =>year_value)
+    push!(reserve_dict,"Month" => month_value)
+    push!(reserve_dict,"Day" =>day_value)
     df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Up.csv")
     CSV.write(csv_path, df,writeheader = true)
 
     # Pointers Dict
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"Category" =>"Reserve")
-    push!(pointers_dict,"Object" =>"Reg_Up")
-    push!(pointers_dict,"Parameter" =>"Requirement")
-    push!(pointers_dict,"Scaling Factor" =>1)
-    push!(pointers_dict,"Data File" =>csv_path)
+    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+    push!(pointers_dict,"category" =>"Reserve")
+    push!(pointers_dict,"component_name" =>"Reg_Up")
+    push!(pointers_dict,"name" =>"Requirement")
+    push!(pointers_dict,"normalization_factor" =>1.0)
+    push!(pointers_dict,"data_file" =>csv_path)
+    push!(pointers_dict,"resolution" =>ts_resolution.value)
 
     append!(df_ts_pointer,pointers_dict)
 
@@ -363,10 +382,10 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Up")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
     push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
-    temp = collect(keys(areas))
-    push!(reserves_metadata_dict, "Eligible Regions"=>join(temp,","))
+    all_areas = "("*join(collect(keys(areas)),",")*")"
+    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,1))
+    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
     push!(reserves_metadata_dict, "Direction"=>"Up")
 
     append!(df_reserves_metadata,reserves_metadata_dict)
@@ -376,19 +395,22 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
         push!(reserve_dict, string(idx) => val)
     end
     max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"DateTime" =>time_stamps[1])
+    push!(reserve_dict,"Year" =>year_value)
+    push!(reserve_dict,"Month" => month_value)
+    push!(reserve_dict,"Day" =>day_value)
     df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Down.csv")
     CSV.write(csv_path, df,writeheader = true)
 
     # Pointers Dict
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"Category" =>"Reserve")
-    push!(pointers_dict,"Object" =>"Reg_Down")
-    push!(pointers_dict,"Parameter" =>"Requirement")
-    push!(pointers_dict,"Scaling Factor" =>1)
-    push!(pointers_dict,"Data File" =>csv_path)
+    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+    push!(pointers_dict,"category" =>"Reserve")
+    push!(pointers_dict,"component_name" =>"Reg_Down")
+    push!(pointers_dict,"name" =>"Requirement")
+    push!(pointers_dict,"normalization_factor" =>1)
+    push!(pointers_dict,"data_file" =>csv_path)
+    push!(pointers_dict,"resolution" =>ts_resolution.value)
 
     append!(df_ts_pointer,pointers_dict)
 
@@ -397,9 +419,9 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Down")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
     push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
-    push!(reserves_metadata_dict, "Eligible Regions"=>join(temp,","))
+    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,1))
+    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
     push!(reserves_metadata_dict, "Direction"=>"Down")
 
     append!(df_reserves_metadata,reserves_metadata_dict)
@@ -412,19 +434,22 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
         push!(reserve_dict, string(idx) => val)
     end
     max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"DateTime" =>time_stamps[1])
+    push!(reserve_dict,"Year" =>year_value)
+    push!(reserve_dict,"Month" => month_value)
+    push!(reserve_dict,"Day" =>day_value)
     df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Up.csv")
     CSV.write(csv_path, df,writeheader = true)
 
     # Pointers Dict
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"Category" =>"Reserve")
-    push!(pointers_dict,"Object" =>"Flex_Up")
-    push!(pointers_dict,"Parameter" =>"Requirement")
-    push!(pointers_dict,"Scaling Factor" =>1)
-    push!(pointers_dict,"Data File" =>csv_path)
+    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+    push!(pointers_dict,"category" =>"Reserve")
+    push!(pointers_dict,"component_name" =>"Flex_Up")
+    push!(pointers_dict,"name" =>"Requirement")
+    push!(pointers_dict,"normalization_factor" =>1)
+    push!(pointers_dict,"data_file" =>csv_path)
+    push!(pointers_dict,"resolution" =>ts_resolution.value)
 
     append!(df_ts_pointer,pointers_dict)
 
@@ -433,9 +458,9 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Up")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
     push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
-    push!(reserves_metadata_dict, "Eligible Regions"=>join(temp,","))
+    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,1))
+    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
     push!(reserves_metadata_dict, "Direction"=>"Up")
 
     append!(df_reserves_metadata,reserves_metadata_dict)
@@ -446,19 +471,22 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
         push!(reserve_dict, string(idx) => val)
     end
     max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"DateTime" =>time_stamps[1])
+    push!(reserve_dict,"Year" =>year_value)
+    push!(reserve_dict,"Month" => month_value)
+    push!(reserve_dict,"Day" =>day_value)
     df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Down.csv")
     CSV.write(csv_path, df,writeheader = true)
 
     # Pointers Dict
     pointers_dict = Dict()
-    push!(pointers_dict,"Simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"Category" =>"Reserve")
-    push!(pointers_dict,"Object" =>"Flex_Down")
-    push!(pointers_dict,"Parameter" =>"Requirement")
-    push!(pointers_dict,"Scaling Factor" =>1)
-    push!(pointers_dict,"Data File" =>csv_path)
+    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+    push!(pointers_dict,"category" =>"Reserve")
+    push!(pointers_dict,"component_name" =>"Flex_Down")
+    push!(pointers_dict,"name" =>"Requirement")
+    push!(pointers_dict,"normalization_factor" =>1)
+    push!(pointers_dict,"data_file" =>csv_path)
+    push!(pointers_dict,"resolution" =>ts_resolution.value)
 
     append!(df_ts_pointer,pointers_dict)
 
@@ -467,9 +495,9 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Down")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
     push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
-    push!(reserves_metadata_dict, "Eligible Regions"=>join(temp,","))
+    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,1))
+    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
     push!(reserves_metadata_dict, "Direction"=>"Down")
 
     append!(df_reserves_metadata,reserves_metadata_dict)
@@ -531,12 +559,13 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
         # Pointers Dict
         num_areas = length(keys(area_bus_mapping_dict))
         pointers_dict = Dict()
-        push!(pointers_dict,"Simulation" =>fill("DAY_AHEAD",num_areas))
-        push!(pointers_dict,"Category" =>fill("Area",num_areas))
-        push!(pointers_dict,"Object" =>collect(keys(area_bus_mapping_dict)))
-        push!(pointers_dict,"Parameter" =>fill("p_load",num_areas))
-        push!(pointers_dict,"Scaling Factor" =>fill(1,num_areas))
-        push!(pointers_dict,"Data File" =>fill(csv_path,num_areas))
+        push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_areas))
+        push!(pointers_dict,"category" =>fill("Area",num_areas))
+        push!(pointers_dict,"component_name" =>collect(keys(area_bus_mapping_dict)))
+        push!(pointers_dict,"name" =>fill("p_load",num_areas))
+        push!(pointers_dict,"normalization_factor" =>fill(1,num_areas))
+        push!(pointers_dict,"data_file" =>fill(csv_path,num_areas))
+        push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_areas))
 
         append!(df_ts_pointer,pointers_dict)
     end
@@ -552,9 +581,9 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     # Export simulation objects CSV
     simulation_objects_dict = Dict()
     push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step","Look_Ahead_Resolution","Reserve_Products"])
-    period_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
     reserve_types = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
-    push!(simulation_objects_dict,"DAY_AHEAD" => [length(time_stamps), period_resolution.value,first(time_stamps),last(time_stamps),length(time_stamps), period_resolution.value,reserve_types])
+    reserve_types = "("*join(reserve_types,",")*")"
+    push!(simulation_objects_dict,"DAY_AHEAD" => [length(time_stamps), ts_resolution.value,first(time_stamps),last(time_stamps),length(time_stamps), ts_resolution.value,reserve_types])
 
     append!(df_simulation_objects,simulation_objects_dict)
     
@@ -698,10 +727,24 @@ function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{A
     comp_dict_values = values(components)
 
     for comp_field in keys(first(comp_dict_values))
-        if(~(comp_field in ["p_fuel" , "startup_fuel","p_max", "p_min"])) # These are handled differently.
-            push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,"None"))
+
+        if(comp_field in ["agc_capable","area","bus","fuel","generator_type","in_service","mbase","ramp_q","unit_type","zone"]) # These should return 'nothing' if not available
+            push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
+        end
+    
+        if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc","pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
+            push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,0))
         end
     end
+
+    # Change the "initial_status" and "initial_p_output" columns so tabular data can understand
+    comp_dict["initial_status"] = floor.(Int64,abs.(comp_dict["initial_status"]))
+    gen_initial_p = Bool[]
+    for p in comp_dict["initial_p_output"]
+        p>0 ? push!(gen_initial_p,true) : push!(gen_initial_p,false) 
+    end
+    delete!(comp_dict,"initial_p_output")
+    push!(comp_dict,"initial_p_output" =>gen_initial_p)
 
     # Include Generator Category
     gen_categories = get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"unit_type","None")
@@ -805,4 +848,25 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
 
     return dir_name, EGRET_json["system"]["baseMVA"]
 end
+#=
+for comp_field in keys(first(comp_dict_values))
 
+    if(comp_field in ["agc_capable","area","bus","fuel","generator_type","in_service","mbase","ramp_q","unit_type","zone"]) # These should return 'nothing' if not available
+        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
+    end
+
+    if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc","pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
+        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,0))
+    end
+end
+
+for comp_field in keys(first(comp_dict_values))
+        if(~(comp_field in ["p_fuel" , "startup_fuel","p_max", "p_min","fuel_cost"])) # These are handled differently.
+            push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
+        end
+    end
+
+    # Handle "fuel_cost" to return 0 if the field is not available
+    gen_fuel_costs = get.(comp_dict_values,"fuel_cost",0)
+    push!(comp_dict,"fuel_cost" => gen_fuel_costs)
+=#
