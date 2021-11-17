@@ -808,6 +808,7 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
     # Bus
     bus_mapping_dict, area_mapping_dict, load_ts_flag = 
     if ("bus" in keys(EGRET_json["elements"]))
+        @info "Parsing buses in EGRET JSON..."
         if ("shunt" in keys(EGRET_json["elements"]))
             parse_EGRET_bus(EGRET_json["elements"]["bus"],EGRET_json["elements"]["load"],dir_name,shunt = EGRET_json["elements"]["shunt"])
         else
@@ -819,6 +820,7 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
 
     # Branch
     if ("branch" in keys(EGRET_json["elements"]))
+        @info "Parsing branches in EGRET JSON..."
         parse_EGRET_branch(EGRET_json["elements"]["branch"],bus_mapping_dict,dir_name)
     else
         error("No branches in the EGRET System JSON")
@@ -827,6 +829,7 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
     # Generator
     gen_ts_flag = 
     if ("generator" in keys(EGRET_json["elements"]))
+        @info "Parsing generators in EGRET JSON..."
         parse_EGRET_generator(EGRET_json["elements"]["generator"],bus_mapping_dict,dir_name)
     else
         error("No generators in the EGRET System JSON")
@@ -834,11 +837,14 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
 
     # Calling time series processing functions
     if (load_ts_flag && gen_ts_flag)
+        @info "Parsing time series of loads and generators and generating time series metadata..."
         time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],loads = EGRET_json["elements"]["load"],gen_components=EGRET_json["elements"]["generator"],
                                   area_bus_mapping_dict=area_mapping_dict)
     elseif load_ts_flag
+        @info "Parsing time series of loads and generating time series metadata..."
         time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],loads = EGRET_json["elements"]["load"],area_bus_mapping_dict=area_mapping_dict)
     elseif gen_ts_flag
+        @info "Parsing time series of generators and generating time series metadata..."
         time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],gen_components=EGRET_json["elements"]["generator"])
     else
         @warn "No generator and load time series data available in the EGRET JSON"
@@ -848,25 +854,3 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
 
     return dir_name, EGRET_json["system"]["baseMVA"]
 end
-#=
-for comp_field in keys(first(comp_dict_values))
-
-    if(comp_field in ["agc_capable","area","bus","fuel","generator_type","in_service","mbase","ramp_q","unit_type","zone"]) # These should return 'nothing' if not available
-        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
-    end
-
-    if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc","pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
-        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,0))
-    end
-end
-
-for comp_field in keys(first(comp_dict_values))
-        if(~(comp_field in ["p_fuel" , "startup_fuel","p_max", "p_min","fuel_cost"])) # These are handled differently.
-            push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
-        end
-    end
-
-    # Handle "fuel_cost" to return 0 if the field is not available
-    gen_fuel_costs = get.(comp_dict_values,"fuel_cost",0)
-    push!(comp_dict,"fuel_cost" => gen_fuel_costs)
-=#
