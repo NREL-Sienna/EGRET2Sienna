@@ -16,7 +16,7 @@ The test folder has a test script on how to use the module. A basic usage of thi
 
 This function converts the EGRET System JSON to a tabular data format which can be used with SIIP tabular data parser. It follows a similar folder organization to RTS-GMLC SourceData. 
 ```
-parse_EGRET_JSON((EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)) 
+parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)
 ```
 **NOTE: If location to save the converted CSV files isn't specified, the module will use the 'Converted_CSV_Files' folder in the 'Data' folder of the repo.
 
