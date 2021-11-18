@@ -589,6 +589,8 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     
     csv_path = joinpath(dir_name,"simulation_objects.csv")
     CSV.write(csv_path, df_simulation_objects,writeheader = true)
+
+    @info "Successfully parsed time series data."
 end
 #####################################################################################
 # Functions to parse EGRET Bus
@@ -668,7 +670,8 @@ function parse_EGRET_bus(components::Dict{String,Any},loads::Dict{String, Any},d
     else
         flag = false
     end
-
+    
+    @info "Successfully parsed buses in the JSON."
     return bus_name_id_mapping_dict,area_bus_mapping_dict,flag
 end
 #####################################################################################
@@ -714,6 +717,8 @@ function parse_EGRET_branch(components::Dict{String,Any},mapping_dict::Dict{Any,
     # Export CSV
     csv_path = joinpath(dir_name,"branch.csv")
     CSV.write(csv_path, df,writeheader = true,transform = (col, val) -> something(val, missing))
+
+    @info "Successfully parsed branches in the JSON."
 end
 #####################################################################################
 # Functions to parse EGRET Generator
@@ -771,7 +776,8 @@ function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{A
     # Export CSV
     csv_path = joinpath(dir_name,"gen.csv")
     CSV.write(csv_path, df,writeheader = true,transform = (col, val) -> something(val, missing))
-
+    
+    @info "Successfully parsed generators in the JSON."
     return gen_ts_flag
 end
 #####################################################################################
