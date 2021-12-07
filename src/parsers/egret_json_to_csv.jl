@@ -350,18 +350,27 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     # Regulation Up & Down
     # Need to be generalized
     # Up
-    reserve_dict = Dict()
-    for (idx,val) in enumerate(system["regulation_up_requirement"]["values"])
-        push!(reserve_dict, string(idx) => val)
+    df = DataFrames.DataFrame()
+    max_reserve_vals = []
+    for i in 1:length(time_stamps)÷ 24
+        reserve_dict = Dict()
+        start_data_range = ((i-1)*24 +1)
+        data_range = range(start_data_range,length=24)
+        start_ts = time_stamps[start_data_range]
+        for (idx,val) in enumerate(system["regulation_up_requirement"]["values"][data_range])
+            push!(reserve_dict, string(idx) => val)
+        end
+        max_reserve_val = maximum(values(reserve_dict))
+        push!( max_reserve_vals,max_reserve_val)
+        year_value = Dates.Year(start_ts).value
+        month_value = Dates.Month(start_ts).value
+        day_value = Dates.Day(start_ts).value
+        push!(reserve_dict,"Year" =>year_value)
+        push!(reserve_dict,"Month" => month_value)
+        push!(reserve_dict,"Day" =>day_value)
+
+        append!(df,reserve_dict)
     end
-    max_reserve_val = maximum(values(reserve_dict))
-    year_value = Dates.Year(first(time_stamps)).value
-    month_value = Dates.Month(first(time_stamps)).value
-    day_value = Dates.Day(first(time_stamps)).value
-    push!(reserve_dict,"Year" =>year_value)
-    push!(reserve_dict,"Month" => month_value)
-    push!(reserve_dict,"Day" =>day_value)
-    df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Up.csv")
     CSV.write(csv_path, df,writeheader = true)
 
@@ -381,7 +390,7 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     reserves_metadata_dict = Dict()
     push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Up")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
+    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
     all_areas = "("*join(collect(keys(areas)),",")*")"
     push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
@@ -390,15 +399,27 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
 
     append!(df_reserves_metadata,reserves_metadata_dict)
     #Down
-    reserve_dict = Dict()
-    for (idx,val) in enumerate(system["regulation_down_requirement"]["values"])
-        push!(reserve_dict, string(idx) => val)
+    df = DataFrames.DataFrame()
+    max_reserve_vals = []
+    for i in 1:length(time_stamps)÷ 24
+        reserve_dict = Dict()
+        start_data_range = ((i-1)*24 +1)
+        data_range = range(start_data_range,length=24)
+        start_ts = time_stamps[start_data_range]
+        for (idx,val) in enumerate(system["regulation_down_requirement"]["values"][data_range])
+            push!(reserve_dict, string(idx) => val)
+        end
+        max_reserve_val = maximum(values(reserve_dict))
+        push!( max_reserve_vals,max_reserve_val)
+        year_value = Dates.Year(start_ts).value
+        month_value = Dates.Month(start_ts).value
+        day_value = Dates.Day(start_ts).value
+        push!(reserve_dict,"Year" =>year_value)
+        push!(reserve_dict,"Month" => month_value)
+        push!(reserve_dict,"Day" =>day_value)
+
+        append!(df,reserve_dict)
     end
-    max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"Year" =>year_value)
-    push!(reserve_dict,"Month" => month_value)
-    push!(reserve_dict,"Day" =>day_value)
-    df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Down.csv")
     CSV.write(csv_path, df,writeheader = true)
 
@@ -418,7 +439,7 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     reserves_metadata_dict = Dict()
     push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Down")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
+    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
     push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
     push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
@@ -429,15 +450,27 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     # Flexible Ramp Up & Down
     # Need to be generalized
     # Up
-    reserve_dict = Dict()
-    for (idx,val) in enumerate(system["flexible_ramp_up_requirement"]["values"])
-        push!(reserve_dict, string(idx) => val)
+    df = DataFrames.DataFrame()
+    max_reserve_vals = []
+    for i in 1:length(time_stamps)÷ 24
+        reserve_dict = Dict()
+        start_data_range = ((i-1)*24 +1)
+        data_range = range(start_data_range,length=24)
+        start_ts = time_stamps[start_data_range]
+        for (idx,val) in enumerate(system["flexible_ramp_up_requirement"]["values"][data_range])
+            push!(reserve_dict, string(idx) => val)
+        end
+        max_reserve_val = maximum(values(reserve_dict))
+        push!( max_reserve_vals,max_reserve_val)
+        year_value = Dates.Year(start_ts).value
+        month_value = Dates.Month(start_ts).value
+        day_value = Dates.Day(start_ts).value
+        push!(reserve_dict,"Year" =>year_value)
+        push!(reserve_dict,"Month" => month_value)
+        push!(reserve_dict,"Day" =>day_value)
+
+        append!(df,reserve_dict)
     end
-    max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"Year" =>year_value)
-    push!(reserve_dict,"Month" => month_value)
-    push!(reserve_dict,"Day" =>day_value)
-    df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Up.csv")
     CSV.write(csv_path, df,writeheader = true)
 
@@ -457,7 +490,7 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     reserves_metadata_dict = Dict()
     push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Up")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
+    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
     push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
     push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
@@ -466,15 +499,27 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     append!(df_reserves_metadata,reserves_metadata_dict)
 
     #Down
-    reserve_dict = Dict()
-    for (idx,val) in enumerate(system["flexible_ramp_down_requirement"]["values"])
-        push!(reserve_dict, string(idx) => val)
+    df = DataFrames.DataFrame()
+    max_reserve_vals = []
+    for i in 1:length(time_stamps)÷ 24
+        reserve_dict = Dict()
+        start_data_range = ((i-1)*24 +1)
+        data_range = range(start_data_range,length=24)
+        start_ts = time_stamps[start_data_range]
+        for (idx,val) in enumerate(system["flexible_ramp_down_requirement"]["values"][data_range])
+            push!(reserve_dict, string(idx) => val)
+        end
+        max_reserve_val = maximum(values(reserve_dict))
+        push!( max_reserve_vals,max_reserve_val)
+        year_value = Dates.Year(start_ts).value
+        month_value = Dates.Month(start_ts).value
+        day_value = Dates.Day(start_ts).value
+        push!(reserve_dict,"Year" =>year_value)
+        push!(reserve_dict,"Month" => month_value)
+        push!(reserve_dict,"Day" =>day_value)
+
+        append!(df,reserve_dict)
     end
-    max_reserve_val = maximum(values(reserve_dict))
-    push!(reserve_dict,"Year" =>year_value)
-    push!(reserve_dict,"Month" => month_value)
-    push!(reserve_dict,"Day" =>day_value)
-    df = DataFrames.DataFrame(reserve_dict)
     csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Down.csv")
     CSV.write(csv_path, df,writeheader = true)
 
@@ -494,7 +539,7 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     reserves_metadata_dict = Dict()
     push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Down")
     push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>max_reserve_val)
+    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
     push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
     push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
@@ -581,9 +626,9 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     # Export simulation objects CSV
     simulation_objects_dict = Dict()
     push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step","Look_Ahead_Resolution","Reserve_Products"])
-    reserve_types = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
-    reserve_types = "("*join(reserve_types,",")*")"
-    push!(simulation_objects_dict,"DAY_AHEAD" => [length(time_stamps), ts_resolution.value,first(time_stamps),last(time_stamps),length(time_stamps), ts_resolution.value,reserve_types])
+    reserve_types_DA = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
+    reserve_types_DA = "("*join(reserve_types_DA,",")*")"
+    push!(simulation_objects_dict,"DAY_AHEAD" => [24, ts_resolution.value,first(time_stamps),last(time_stamps),24, ts_resolution.value,reserve_types_DA])
 
     append!(df_simulation_objects,simulation_objects_dict)
     

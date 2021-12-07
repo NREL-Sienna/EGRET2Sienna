@@ -12,7 +12,7 @@
 # Read EGRET System JSON
 #####################################################################################
 import JSON
-Location_1 = dirname(pwd())*"/test/Day_Ahead_Model_2020-01-01.json"; 
+Location_1 = dirname(pwd())*"/test/DAY_AHEAD_Model_2020-07-01_2020-07-14.json"; 
 EGRET_json = JSON.parsefile(Location_1);
 #####################################################################################
 # Convert EGRET JSON to CSV in a format SIIP Tabular Data understands
