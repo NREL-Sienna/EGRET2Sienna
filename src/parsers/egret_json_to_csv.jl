@@ -200,13 +200,17 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
                                 loads_RT::Union{Nothing, Dict{String, Any}} = nothing,gen_components_RT::Union{Nothing, Dict{String, Any}} = nothing)
     #Time stamp processing
     # Day-Ahead
+    rt_flag = false
+
     date_format = Dates.DateFormat("Y-m-d H:M")
     time_stamps_DA = Dates.DateTime.(system_DA["time_keys"],date_format)
     ts_resolution_DA = (Dates.Second(last(time_stamps_DA) - first(time_stamps_DA)))/(length(time_stamps_DA)-1)
 
     # Real-Time
-    time_stamps_RT = Dates.DateTime.(system_RT["time_keys"],date_format)
-    ts_resolution_RT = (Dates.Second(last(time_stamps_RT) - first(time_stamps_RT)))/(length(time_stamps_RT)-1)
+    if (system_RT !== nothing)
+        time_stamps_RT = Dates.DateTime.(system_RT["time_keys"],date_format)
+        ts_resolution_RT = (Dates.Second(last(time_stamps_RT) - first(time_stamps_RT)))/(length(time_stamps_RT)-1)
+    end
 
     # Make time series data folder
     
@@ -290,7 +294,7 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
             append!(df_reserves_metadata,reserves_metadata_dict)
         end
     end
-    
+
     # Regulation Up & Down
     # Up & Down
     # Check if RT System is passed
@@ -530,14 +534,22 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
     reserve_types_RT = "("*join(reserve_types_RT,",")*")"
 
     push!(simulation_objects_dict,"DAY_AHEAD" => [24, ts_resolution_DA.value,first(time_stamps_DA),last(time_stamps_DA),24, ts_resolution_DA.value,reserve_types_DA])
-    push!(simulation_objects_dict,"REAL_TIME" => [24, ts_resolution_RT.value,first(time_stamps_RT),last(time_stamps_RT),2, ts_resolution_RT.value,reserve_types_RT])
+    if (system_RT !== nothing)
+        push!(simulation_objects_dict,"REAL_TIME" => [1, ts_resolution_RT.value,first(time_stamps_DA),last(time_stamps_DA),2, ts_resolution_RT.value,reserve_types_RT])
+        rt_flag = true
+    end
 
     append!(df_simulation_objects,simulation_objects_dict)
     
     csv_path = joinpath(dir_name,"simulation_objects.csv")
     CSV.write(csv_path, df_simulation_objects,writeheader = true)
 
-    @info "Successfully parsed time series data."
+    if(rt_flag == true)
+        @info "Successfully parsed DA and RT Systems time series data."
+    else
+        @info "Successfully parsed DA System time series data."
+    end
+    return rt_flag
 end
 #####################################################################################
 # Functions to parse EGRET Bus
@@ -737,9 +749,10 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
     if (~("elements" in keys(EGRET_json_DA)) || ~("system" in keys(EGRET_json_DA)))
         error("Please check the EGRET DA System JSON")
     end
-
-    if (~("elements" in keys(EGRET_json_RT)) || ~("system" in keys(EGRET_json_RT)))
-        error("Please check the EGRET RT System JSON")
+    if (EGRET_json_RT !== nothing)
+        if (~("elements" in keys(EGRET_json_RT)) || ~("system" in keys(EGRET_json_RT)))
+            error("Please check the EGRET RT System JSON")
+        end
     end
 
     #kwargs handling
@@ -787,33 +800,37 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
     end
 
     # Calling time series processing functions
+    rt_flag = 
     if (load_ts_flag && gen_ts_flag)
-        @info "Parsing time series of loads and generators and generating time series metadata..."
         if (EGRET_json_RT !== nothing)
+            @info "Parsing time series of loads and generators and generating time series metadata for DA and RT Systems..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict,
                                    areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"],
                                    gen_components_RT=EGRET_json_RT["elements"]["generator"])
         else
+            @info "Parsing time series of loads and generators and generating time series metadata for DA System..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
         end
     elseif load_ts_flag
-        @info "Parsing time series of loads and generating time series metadata..."
         if (EGRET_json_RT !== nothing)
+            @info "Parsing time series of loads and generating time series metadata for DA and RT Systems..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],
                                    system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
         else
+            @info "Parsing time series of loads and generating time series metadata for DA System..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    area_bus_mapping_dict=area_mapping_dict)
         end
     elseif gen_ts_flag
-        @info "Parsing time series of generators and generating time series metadata..."
         if (EGRET_json_RT !== nothing)
+            @info "Parsing time series of generators and generating time series metadata for DA and RT Systems..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
                                    areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
         else
+            @info "Parsing time series of generators and generating time series metadata for DA System..."
             time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"])
         end
     else
@@ -822,5 +839,5 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
 
     @info "Successfully generated CSV files compatible with SIIP PSY tabular data parser here : $(dir_name)."
 
-    return dir_name, EGRET_json_DA["system"]["baseMVA"]
+    return dir_name, EGRET_json_DA["system"]["baseMVA"],rt_flag
 end
