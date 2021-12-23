@@ -114,7 +114,8 @@ startup_time = (float(row['Start Time Hot Hr']),
 #####################################################################################
 function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, Any})
 
-    lookup_dict = Dict([(1, ("Start Time Cold Hr","Start Heat Cold MBTU")), (2, ("Start Time Warm Hr","Start Heat Warm MBTU")),(3, ("Start Time Hot Hr","Start Heat Hot MBTU"))]);
+    lookup_dict = Dict([(1, ("Start Time Cold Hr","Start Heat Cold MBTU")), (2, ("Start Time Warm Hr","Start Heat Warm MBTU")),
+                       (3, ("Start Time Hot Hr","Start Heat Hot MBTU"))]);
 
     push!(comp_dict,"Start Heat Hot MBTU" =>[])
     push!(comp_dict,"Start Heat Warm MBTU" =>[])
@@ -147,142 +148,66 @@ function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Di
     end
 end
 #####################################################################################
-# Make HYDRO time series CSV
+# Common function to make CSV's related to generator time series data
 #####################################################################################
-function make_HYDRO_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
-   
-    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
-    df = DataFrames.DataFrame()
+function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::String,components_DA::Vector{Any},df_ts_pointer::DataFrames.DataFrame,gen_type::String;
+                                time_stamps_RT::Union{Nothing, Vector{Dates.DateTime}} = nothing,components_RT::Union{Nothing, Vector{Any}} = nothing)
 
-    df[!,"DateTime"] = time_stamps
-    comp_names = []
-    for idx in 1:length(components)
-        df[!,components[idx][1]] =  get(components[idx][2],"p_max","None")["values"]
-        push!(comp_names,components[idx][1])
+    ts_resolution_DA = (Dates.Second(last(time_stamps_DA) - first(time_stamps_DA)))/(length(time_stamps_DA)-1)
+    if (time_stamps_RT !== nothing)
+        ts_resolution_RT = (Dates.Second(last(time_stamps_RT) - first(time_stamps_RT)))/(length(time_stamps_RT)-1)
     end
-    # Export CSV
-    csv_path = joinpath(dir_name,"DAY_AHEAD_hydro.csv")
-    CSV.write(csv_path, df,writeheader = true)
 
-    # Pointers Dict
-    num_components = length(comp_names)
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"category" =>fill("Generator",num_components))
-    push!(pointers_dict,"component_name" =>comp_names)
-    push!(pointers_dict,"name" =>fill("p_max",num_components))
-    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
-    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
-    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
-
-    return pointers_dict
-end
-#####################################################################################
-# Make PV time series CSV
-#####################################################################################
-function make_PV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
-    
-    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
-    df = DataFrames.DataFrame()
-
-    df[!,"DateTime"] = time_stamps
-    comp_names = []
-    for idx in 1:length(components)
-        df[!,components[idx][1]] =  get(components[idx][2],"p_max","None")["values"]
-        push!(comp_names,components[idx][1])
+    # Check if RT components are passed
+    comps_dict = Dict("DAY_AHEAD" => (components_DA,time_stamps_DA,ts_resolution_DA.value))
+    if (components_RT !== nothing)
+        push!(comps_dict,"REAL_TIME" => (components_RT,time_stamps_RT,ts_resolution_RT.value))
     end
-    # Export CSV
-    csv_path = joinpath(dir_name,"DAY_AHEAD_pv.csv")
-    CSV.write(csv_path, df,writeheader = true)
+    for comp_key in keys(comps_dict)
+        df = DataFrames.DataFrame()
 
-    # Pointers Dict
-    num_components = length(comp_names)
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"category" =>fill("Generator",num_components))
-    push!(pointers_dict,"component_name" =>comp_names)
-    push!(pointers_dict,"name" =>fill("p_max",num_components))
-    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
-    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
-    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
+        df[!,"DateTime"] = comps_dict[comp_key][2]
+        comp_names = []
+        for idx in 1:length(comps_dict[comp_key][1])
+            df[!,comps_dict[comp_key][1][idx][1]] =  get(comps_dict[comp_key][1][idx][2],"p_max","None")["values"]
+            push!(comp_names,comps_dict[comp_key][1][idx][1])
+        end
+        # Export CSV
+        csv_path = joinpath(dir_name,comp_key*"_"*gen_type*".csv")
+        CSV.write(csv_path, df,writeheader = true)
 
-    return pointers_dict
-end
-#####################################################################################
-# Make RTPV time series CSV
-#####################################################################################
-function make_RTPV_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
-    
-    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
-    df = DataFrames.DataFrame()
+        # Pointers Dict
+        num_components = length(comp_names)
+        pointers_dict = Dict()
+        push!(pointers_dict,"simulation" =>fill(comp_key,num_components))
+        push!(pointers_dict,"category" =>fill("Generator",num_components))
+        push!(pointers_dict,"component_name" =>comp_names)
+        push!(pointers_dict,"name" =>fill("p_max",num_components))
+        push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
+        push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+        push!(pointers_dict,"resolution" =>fill(comps_dict[comp_key][3],num_components))
 
-    df[!,"DateTime"] = time_stamps
-    comp_names = []
-    
-    for idx in 1:length(components)
-        df[!,components[idx][1]] =  get(components[idx][2],"p_max","None")["values"]
-        push!(comp_names,components[idx][1])
+        append!(df_ts_pointer,pointers_dict)
     end
-    # Export CSV
-    csv_path = joinpath(dir_name,"DAY_AHEAD_rtpv.csv")
-    CSV.write(csv_path, df,writeheader = true)
-
-    # Pointers Dict
-    num_components = length(comp_names)
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"category" =>fill("Generator",num_components))
-    push!(pointers_dict,"component_name" =>comp_names)
-    push!(pointers_dict,"name" =>fill("p_max",num_components))
-    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
-    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
-    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
-
-    return pointers_dict
-end
-#####################################################################################
-# Make WIND time series CSV
-#####################################################################################
-function make_WIND_time_series(time_stamps::Vector{Dates.DateTime},dir_name::String,components::Vector{Any})
-
-    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
-    df = DataFrames.DataFrame()
-
-    df[!,"DateTime"] = time_stamps
-    comp_names = []
-    for idx in 1:length(components)
-        df[!,components[idx][1]] =  get(components[idx][2],"p_max","None")["values"]
-        push!(comp_names,components[idx][1])
-    end
-    # Export CSV
-    csv_path = joinpath(dir_name,"DAY_AHEAD_wind.csv")
-    CSV.write(csv_path, df,writeheader = true)
-
-    # Pointers Dict
-    num_components = length(comp_names)
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_components))
-    push!(pointers_dict,"category" =>fill("Generator",num_components))
-    push!(pointers_dict,"component_name" =>comp_names)
-    push!(pointers_dict,"name" =>fill("p_max",num_components))
-    push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
-    push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
-    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_components))
- 
-    return pointers_dict
 end
 #####################################################################################
 # Parse time series data
 # **TODO: Need to be generaized to handle RT Systems and reserves
 #####################################################################################
-function time_series_processing(dir_name::String,areas::Dict{String, Any},system::Dict{String, Any};loads::Union{Nothing, Dict{String, Any}} = nothing,
-                                 area_bus_mapping_dict::Union{Nothing, Dict{Any, Any}} = nothing,gen_components::Union{Nothing, Dict{String, Any}} = nothing)
-    
+function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},system_DA::Dict{String, Any};loads_DA::Union{Nothing, Dict{String, Any}} = nothing,
+                                area_bus_mapping_dict::Union{Nothing, Dict{Any, Any}} = nothing,gen_components_DA::Union{Nothing, Dict{String, Any}} = nothing,
+                                areas_RT::Union{Nothing, Dict{String, Any}} = nothing,system_RT::Union{Nothing, Dict{String, Any}} = nothing,
+                                loads_RT::Union{Nothing, Dict{String, Any}} = nothing,gen_components_RT::Union{Nothing, Dict{String, Any}} = nothing)
     #Time stamp processing
+    # Day-Ahead
     date_format = Dates.DateFormat("Y-m-d H:M")
-    time_stamps = Dates.DateTime.(system["time_keys"],date_format)
+    time_stamps_DA = Dates.DateTime.(system_DA["time_keys"],date_format)
+    ts_resolution_DA = (Dates.Second(last(time_stamps_DA) - first(time_stamps_DA)))/(length(time_stamps_DA)-1)
 
-    ts_resolution = (Dates.Second(last(time_stamps) - first(time_stamps)))/(length(time_stamps)-1)
+    # Real-Time
+    time_stamps_RT = Dates.DateTime.(system_RT["time_keys"],date_format)
+    ts_resolution_RT = (Dates.Second(last(time_stamps_RT) - first(time_stamps_RT)))/(length(time_stamps_RT)-1)
+
     # Make time series data folder
     
     ts_dir_name = joinpath(dir_name,"timeseries_data_files")
@@ -301,318 +226,289 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     df_simulation_objects = DataFrames.DataFrame()
 
     #Reserves
+    #**TODO - This currently assumes every EGRET JSON passed has all the reserve products RTS_GMLC has. There is an easy fix for this.
+    gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None")) 
+                                if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
+    gen_fuel_unit_types = "("*join(gen_fuel_unit_types,",")*")"
+
+    all_areas_DA = "("*join(collect(keys(areas_DA)),",")*")"
+
     # Spinning Reserves
     folder_name = joinpath(ts_dir_name,"RESERVES")
     mkpath(folder_name)
-    object_names = []
-    data_files = []
-    region_max_values = []
-    for (idx,key) in enumerate(keys(areas))
-        df = DataFrames.DataFrame()
-        df[!,"DateTime"] = time_stamps
-        column_name = "Spin_Up_R"*"$idx"
-        push!(object_names,column_name)
-        df[!,column_name] = areas[key]["spinning_reserve_requirement"]["values"]
-        push!(region_max_values,maximum(areas[key]["spinning_reserve_requirement"]["values"]))
-
-        # Export CSV
-        csv_name = "DAY_AHEAD_regional_Spin_Up_R"* "$idx" *".csv"
-        csv_path = joinpath(folder_name,csv_name)
-        push!(data_files,csv_path)
-        CSV.write(csv_path, df,writeheader = true)
+    # Check if RT System is passed
+    areas_dict = Dict("DAY_AHEAD" => (areas_DA,time_stamps_DA,ts_resolution_DA.value))
+    if (areas_RT !== nothing)
+        push!(areas_dict,"REAL_TIME" => (areas_RT,time_stamps_RT,ts_resolution_RT.value))
     end
-    # Pointers Dict
-    num_areas = length(keys(area_bus_mapping_dict))
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_areas))
-    push!(pointers_dict,"category" =>fill("Reserve",num_areas))
-    push!(pointers_dict,"component_name" =>object_names)
-    push!(pointers_dict,"name" =>fill("Requirement",num_areas))
-    push!(pointers_dict,"normalization_factor" =>fill(1.0,num_areas))
-    push!(pointers_dict,"data_file" =>data_files)
-    push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_areas))
 
-    append!(df_ts_pointer,pointers_dict)
+    for area_key in keys(areas_dict)
+        object_names = []
+        data_files = []
+        region_max_values = []
+        for (idx,key) in enumerate(keys(areas_dict[area_key][1]))
+            df = DataFrames.DataFrame()
+            df[!,"DateTime"] = areas_dict[area_key][2]
+            column_name = "Spin_Up_R"*"$idx"
+            push!(object_names,column_name)
+            df[!,column_name] = areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]
+            push!(region_max_values,maximum(areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]))
 
-    # Reserves Metadata Dict
-    reserves_metadata_dict = Dict()
-    gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components),"fuel","None").*" ".*get.(values(gen_components),"unit_type","None")) if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
-    gen_fuel_unit_types = "("*join(gen_fuel_unit_types,",")*")"
-    push!(reserves_metadata_dict, "Reserve Product"=>object_names)
-    push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
-    push!(reserves_metadata_dict, "Eligible Regions"=>collect(keys(areas)))
-    push!(reserves_metadata_dict, "Eligible Device Categories"=>fill("Generator",num_areas))
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,num_areas))
-    push!(reserves_metadata_dict, "Direction"=>fill("Up",num_areas))
+            # Export CSV
+            csv_name = area_key*"_regional_Spin_Up_R"* "$idx" *".csv"
+            csv_path = joinpath(folder_name,csv_name)
+            push!(data_files,csv_path)
+            CSV.write(csv_path, df,writeheader = true)
+        end
+        # Pointers Dict
+        num_areas = length(keys(area_bus_mapping_dict))
+        # Timeseries pointers Dict to build the necessary CSV
+        pointers_dict = Dict()
+        push!(pointers_dict,"simulation" =>fill(area_key,num_areas))
+        push!(pointers_dict,"category" =>fill("Reserve",num_areas))
+        push!(pointers_dict,"component_name" =>object_names)
+        push!(pointers_dict,"name" =>fill("Requirement",num_areas))
+        push!(pointers_dict,"normalization_factor" =>fill(1.0,num_areas))
+        push!(pointers_dict,"data_file" =>data_files)
+        push!(pointers_dict,"resolution" =>fill(areas_dict[area_key][3],num_areas))
 
-    append!(df_reserves_metadata,reserves_metadata_dict)
+        append!(df_ts_pointer,pointers_dict)
+
+        # Reserves Metadata Dict
+        if (area_key =="DAY_AHEAD")
+            # Reserves Metadata Dict to build the necessary CSV
+            reserves_metadata_dict = Dict()
+
+            push!(reserves_metadata_dict, "Reserve Product"=>object_names)
+            push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
+            push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
+            push!(reserves_metadata_dict, "Eligible Regions"=>collect(keys(areas_DA)))
+            push!(reserves_metadata_dict, "Eligible Device Categories"=>fill("Generator",num_areas))
+            push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,num_areas))
+            push!(reserves_metadata_dict, "Direction"=>fill("Up",num_areas))
+
+            append!(df_reserves_metadata,reserves_metadata_dict)
+        end
+    end
+    
     # Regulation Up & Down
-    # Need to be generalized
-    # Up
-    df = DataFrames.DataFrame()
-    max_reserve_vals = []
-    for i in 1:length(time_stamps)÷ 24
-        reserve_dict = Dict()
-        start_data_range = ((i-1)*24 +1)
-        data_range = range(start_data_range,length=24)
-        start_ts = time_stamps[start_data_range]
-        for (idx,val) in enumerate(system["regulation_up_requirement"]["values"][data_range])
-            push!(reserve_dict, string(idx) => val)
-        end
-        max_reserve_val = maximum(values(reserve_dict))
-        push!( max_reserve_vals,max_reserve_val)
-        year_value = Dates.Year(start_ts).value
-        month_value = Dates.Month(start_ts).value
-        day_value = Dates.Day(start_ts).value
-        push!(reserve_dict,"Year" =>year_value)
-        push!(reserve_dict,"Month" => month_value)
-        push!(reserve_dict,"Day" =>day_value)
-
-        append!(df,reserve_dict)
+    # Up & Down
+    # Check if RT System is passed
+    reg_dir_dict = Dict([("Up", ("regulation_up_requirement","_regional_Reg_Up.csv","Reg_Up")), ("Down", ("regulation_down_requirement","_regional_Reg_Down.csv","Reg_Down"))]);
+    
+    regulation_dict = Dict("DAY_AHEAD" => (system_DA,time_stamps_DA,24,ts_resolution_DA.value))
+    if (system_RT !== nothing)
+        push!(regulation_dict,"REAL_TIME" => (system_RT,time_stamps_RT,288,ts_resolution_RT.value))
     end
-    csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Up.csv")
-    CSV.write(csv_path, df,writeheader = true)
+    for dir in keys(reg_dir_dict)
+        for reg_up_key in keys(regulation_dict)
+            df = DataFrames.DataFrame()
+            max_reserve_vals = []
+            for i in 1:length(regulation_dict[reg_up_key][2])÷ regulation_dict[reg_up_key][3]
+                reserve_dict = Dict()
+                start_data_range = ((i-1)*regulation_dict[reg_up_key][3] +1)
+                data_range = range(start_data_range,length=regulation_dict[reg_up_key][3])
+                start_ts = regulation_dict[reg_up_key][2][start_data_range]
+                for (idx,val) in enumerate(regulation_dict[reg_up_key][1][reg_dir_dict[dir][1]]["values"][data_range])
+                    push!(reserve_dict, string(idx) => val)
+                end
+                max_reserve_val = maximum(values(reserve_dict))
+                push!(max_reserve_vals,max_reserve_val)
+                year_value = Dates.Year(start_ts).value
+                month_value = Dates.Month(start_ts).value
+                day_value = Dates.Day(start_ts).value
+                push!(reserve_dict,"Year" =>year_value)
+                push!(reserve_dict,"Month" => month_value)
+                push!(reserve_dict,"Day" =>day_value)
 
-    # Pointers Dict
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"category" =>"Reserve")
-    push!(pointers_dict,"component_name" =>"Reg_Up")
-    push!(pointers_dict,"name" =>"Requirement")
-    push!(pointers_dict,"normalization_factor" =>1.0)
-    push!(pointers_dict,"data_file" =>csv_path)
-    push!(pointers_dict,"resolution" =>ts_resolution.value)
+                append!(df,reserve_dict)
+            end
+            csv_path = joinpath(folder_name,reg_up_key*reg_dir_dict[dir][2])
+            CSV.write(csv_path, df,writeheader = true)
 
-    append!(df_ts_pointer,pointers_dict)
+            # Pointers Dict
+            pointers_dict = Dict()
+            push!(pointers_dict,"simulation" =>reg_up_key)
+            push!(pointers_dict,"category" =>"Reserve")
+            push!(pointers_dict,"component_name" =>reg_dir_dict[dir][3])
+            push!(pointers_dict,"name" =>"Requirement")
+            push!(pointers_dict,"normalization_factor" =>1.0)
+            push!(pointers_dict,"data_file" =>csv_path)
+            push!(pointers_dict,"resolution" =>regulation_dict[reg_up_key][4])
 
-    # Reserves Metadata Dict
-    reserves_metadata_dict = Dict()
-    push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Up")
-    push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-    all_areas = "("*join(collect(keys(areas)),",")*")"
-    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
-    push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-    push!(reserves_metadata_dict, "Direction"=>"Up")
+            append!(df_ts_pointer,pointers_dict)
+            if (reg_up_key =="DAY_AHEAD")
+                # Reserves Metadata Dict
+                reserves_metadata_dict = Dict()
+                push!(reserves_metadata_dict, "Reserve Product"=>reg_dir_dict[dir][3])
+                push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
+                push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
+                push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
+                push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
+                push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
+                push!(reserves_metadata_dict, "Direction"=>dir)
 
-    append!(df_reserves_metadata,reserves_metadata_dict)
-    #Down
-    df = DataFrames.DataFrame()
-    max_reserve_vals = []
-    for i in 1:length(time_stamps)÷ 24
-        reserve_dict = Dict()
-        start_data_range = ((i-1)*24 +1)
-        data_range = range(start_data_range,length=24)
-        start_ts = time_stamps[start_data_range]
-        for (idx,val) in enumerate(system["regulation_down_requirement"]["values"][data_range])
-            push!(reserve_dict, string(idx) => val)
+                append!(df_reserves_metadata,reserves_metadata_dict)
+            end
         end
-        max_reserve_val = maximum(values(reserve_dict))
-        push!( max_reserve_vals,max_reserve_val)
-        year_value = Dates.Year(start_ts).value
-        month_value = Dates.Month(start_ts).value
-        day_value = Dates.Day(start_ts).value
-        push!(reserve_dict,"Year" =>year_value)
-        push!(reserve_dict,"Month" => month_value)
-        push!(reserve_dict,"Day" =>day_value)
-
-        append!(df,reserve_dict)
     end
-    csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Reg_Down.csv")
-    CSV.write(csv_path, df,writeheader = true)
-
-    # Pointers Dict
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"category" =>"Reserve")
-    push!(pointers_dict,"component_name" =>"Reg_Down")
-    push!(pointers_dict,"name" =>"Requirement")
-    push!(pointers_dict,"normalization_factor" =>1)
-    push!(pointers_dict,"data_file" =>csv_path)
-    push!(pointers_dict,"resolution" =>ts_resolution.value)
-
-    append!(df_ts_pointer,pointers_dict)
-
-    # Reserves Metadata Dict
-    reserves_metadata_dict = Dict()
-    push!(reserves_metadata_dict, "Reserve Product"=>"Reg_Down")
-    push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
-    push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-    push!(reserves_metadata_dict, "Direction"=>"Down")
-
-    append!(df_reserves_metadata,reserves_metadata_dict)
 
     # Flexible Ramp Up & Down
-    # Need to be generalized
+    # Not available for RT System (must be handled)
     # Up
-    df = DataFrames.DataFrame()
-    max_reserve_vals = []
-    for i in 1:length(time_stamps)÷ 24
-        reserve_dict = Dict()
-        start_data_range = ((i-1)*24 +1)
-        data_range = range(start_data_range,length=24)
-        start_ts = time_stamps[start_data_range]
-        for (idx,val) in enumerate(system["flexible_ramp_up_requirement"]["values"][data_range])
-            push!(reserve_dict, string(idx) => val)
+    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
+
+    for dir in keys(flex_dir_dict)
+        df = DataFrames.DataFrame()
+        max_reserve_vals = []
+        for i in 1:length(time_stamps_DA)÷ 24
+            reserve_dict = Dict()
+            start_data_range = ((i-1)*24 +1)
+            data_range = range(start_data_range,length=24)
+            start_ts = time_stamps_DA[start_data_range]
+            for (idx,val) in enumerate(system_DA[flex_dir_dict[dir][1]]["values"][data_range])
+                push!(reserve_dict, string(idx) => val)
+            end
+            max_reserve_val = maximum(values(reserve_dict))
+            push!(max_reserve_vals,max_reserve_val)
+            year_value = Dates.Year(start_ts).value
+            month_value = Dates.Month(start_ts).value
+            day_value = Dates.Day(start_ts).value
+            push!(reserve_dict,"Year" =>year_value)
+            push!(reserve_dict,"Month" => month_value)
+            push!(reserve_dict,"Day" =>day_value)
+
+            append!(df,reserve_dict)
         end
-        max_reserve_val = maximum(values(reserve_dict))
-        push!( max_reserve_vals,max_reserve_val)
-        year_value = Dates.Year(start_ts).value
-        month_value = Dates.Month(start_ts).value
-        day_value = Dates.Day(start_ts).value
-        push!(reserve_dict,"Year" =>year_value)
-        push!(reserve_dict,"Month" => month_value)
-        push!(reserve_dict,"Day" =>day_value)
+        csv_path = joinpath(folder_name,"DAY_AHEAD"*flex_dir_dict[dir][2])
+        CSV.write(csv_path, df,writeheader = true)
 
-        append!(df,reserve_dict)
+        # Pointers Dict
+        pointers_dict = Dict()
+        push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+        push!(pointers_dict,"category" =>"Reserve")
+        push!(pointers_dict,"component_name" =>flex_dir_dict[dir][3])
+        push!(pointers_dict,"name" =>"Requirement")
+        push!(pointers_dict,"normalization_factor" =>1)
+        push!(pointers_dict,"data_file" =>csv_path)
+        push!(pointers_dict,"resolution" =>ts_resolution_DA.value)
+
+        append!(df_ts_pointer,pointers_dict)
+
+        # Reserves Metadata Dict
+        reserves_metadata_dict = Dict()
+        push!(reserves_metadata_dict, "Reserve Product"=>flex_dir_dict[dir][3])
+        push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
+        push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
+        push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
+        push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
+        push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
+        push!(reserves_metadata_dict, "Direction"=>dir)
+
+        append!(df_reserves_metadata,reserves_metadata_dict)
     end
-    csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Up.csv")
-    CSV.write(csv_path, df,writeheader = true)
-
-    # Pointers Dict
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"category" =>"Reserve")
-    push!(pointers_dict,"component_name" =>"Flex_Up")
-    push!(pointers_dict,"name" =>"Requirement")
-    push!(pointers_dict,"normalization_factor" =>1)
-    push!(pointers_dict,"data_file" =>csv_path)
-    push!(pointers_dict,"resolution" =>ts_resolution.value)
-
-    append!(df_ts_pointer,pointers_dict)
-
-    # Reserves Metadata Dict
-    reserves_metadata_dict = Dict()
-    push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Up")
-    push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
-    push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-    push!(reserves_metadata_dict, "Direction"=>"Up")
-
-    append!(df_reserves_metadata,reserves_metadata_dict)
-
-    #Down
-    df = DataFrames.DataFrame()
-    max_reserve_vals = []
-    for i in 1:length(time_stamps)÷ 24
-        reserve_dict = Dict()
-        start_data_range = ((i-1)*24 +1)
-        data_range = range(start_data_range,length=24)
-        start_ts = time_stamps[start_data_range]
-        for (idx,val) in enumerate(system["flexible_ramp_down_requirement"]["values"][data_range])
-            push!(reserve_dict, string(idx) => val)
-        end
-        max_reserve_val = maximum(values(reserve_dict))
-        push!( max_reserve_vals,max_reserve_val)
-        year_value = Dates.Year(start_ts).value
-        month_value = Dates.Month(start_ts).value
-        day_value = Dates.Day(start_ts).value
-        push!(reserve_dict,"Year" =>year_value)
-        push!(reserve_dict,"Month" => month_value)
-        push!(reserve_dict,"Day" =>day_value)
-
-        append!(df,reserve_dict)
-    end
-    csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Flex_Down.csv")
-    CSV.write(csv_path, df,writeheader = true)
-
-    # Pointers Dict
-    pointers_dict = Dict()
-    push!(pointers_dict,"simulation" =>"DAY_AHEAD")
-    push!(pointers_dict,"category" =>"Reserve")
-    push!(pointers_dict,"component_name" =>"Flex_Down")
-    push!(pointers_dict,"name" =>"Requirement")
-    push!(pointers_dict,"normalization_factor" =>1)
-    push!(pointers_dict,"data_file" =>csv_path)
-    push!(pointers_dict,"resolution" =>ts_resolution.value)
-
-    append!(df_ts_pointer,pointers_dict)
-
-    # Reserves Metadata Dict
-    reserves_metadata_dict = Dict()
-    push!(reserves_metadata_dict, "Reserve Product"=>"Flex_Down")
-    push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
-    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas)
-    push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-    push!(reserves_metadata_dict, "Direction"=>"Down")
-
-    append!(df_reserves_metadata,reserves_metadata_dict)
 
     # Generator
     # Filtering components with time series data
-    if (gen_components !== nothing)
-        hydro_components = []
-        pv_components = []
-        rtpv_components =[]
-        wind_components =[]
-        for gen_key in keys(gen_components)
-            gen_unit_type = get(gen_components[gen_key],"unit_type","None")
+    if (gen_components_DA !== nothing)
+        #DA
+        hydro_components_DA = []
+        pv_components_DA = []
+        rtpv_components_DA =[]
+        wind_components_DA =[]
+        #RT
+        hydro_components_RT = []
+        pv_components_RT = []
+        rtpv_components_RT =[]
+        wind_components_RT =[]
+        for gen_key in keys(gen_components_DA)
+            gen_unit_type = get(gen_components_DA[gen_key],"unit_type","None")
 
             if (gen_unit_type == "HYDRO")
-                push!(hydro_components,gen_key => gen_components[gen_key])
+                push!(hydro_components_DA,gen_key => gen_components_DA[gen_key])
             end
             if (gen_unit_type == "PV")
-                push!(pv_components,gen_key => gen_components[gen_key])
+                push!(pv_components_DA,gen_key => gen_components_DA[gen_key])
             end
             if (gen_unit_type == "RTPV")
-                push!(rtpv_components,gen_key => gen_components[gen_key])
+                push!(rtpv_components_DA,gen_key => gen_components_DA[gen_key])
             end
             if (gen_unit_type == "WIND")
-                push!(wind_components,gen_key => gen_components[gen_key])
+                push!(wind_components_DA,gen_key => gen_components_DA[gen_key])
+            end
+        end
+        if (gen_components_RT!== nothing)
+            for gen_key in keys(gen_components_RT)
+                gen_unit_type = get(gen_components_RT[gen_key],"unit_type","None")
+
+                if (gen_unit_type == "HYDRO")
+                    push!(hydro_components_RT,gen_key => gen_components_RT[gen_key])
+                end
+                if (gen_unit_type == "PV")
+                    push!(pv_components_RT,gen_key => gen_components_RT[gen_key])
+                end
+                if (gen_unit_type == "RTPV")
+                    push!(rtpv_components_RT,gen_key => gen_components_RT[gen_key])
+                end
+                if (gen_unit_type == "WIND")
+                    push!(wind_components_RT,gen_key => gen_components_RT[gen_key])
+                end
             end
         end
         # Call functions for different types of Generator
-        gen_unit_dict = Dict([("HYDRO", (hydro_components,make_HYDRO_time_series)), ("PV", (pv_components,make_PV_time_series)),
-                            ("RTPV", (rtpv_components, make_RTPV_time_series)),("WIND", (wind_components,make_WIND_time_series))]);
+        gen_unit_dict = Dict([("HYDRO", (hydro_components_DA,hydro_components_RT)), ("PV", (pv_components_DA,pv_components_RT)),
+                             ("RTPV", (rtpv_components_DA,rtpv_components_RT)),("WIND", (wind_components_DA,wind_components_RT))]);
     
         for u_t_key in keys(gen_unit_dict) # in.(keys(gen_unit_dict), Ref(get.(values(gen_components),"unit_type","None")))
-            u_t_avail = in(u_t_key, get.(values(gen_components),"unit_type","None"))
+            u_t_avail = in(u_t_key, get.(values(gen_components_DA),"unit_type","None"))
             if (u_t_avail)
                 folder_name = joinpath(ts_dir_name,u_t_key)
                 mkpath(folder_name)
-                pointers_dict = gen_unit_dict[u_t_key][2](time_stamps,folder_name,gen_unit_dict[u_t_key][1])
-                append!(df_ts_pointer,pointers_dict)
+                if (length(gen_unit_dict[u_t_key][2]) > 0)
+                    make_gen_time_series!(time_stamps_DA,folder_name,gen_unit_dict[u_t_key][1],df_ts_pointer,u_t_key,time_stamps_RT= time_stamps_RT,components_RT = gen_unit_dict[u_t_key][2])
+                else
+                    make_gen_time_series!(time_stamps_DA,folder_name,gen_unit_dict[u_t_key][1],df_ts_pointer,u_t_key)
+                end
             end
         end
     end
     # Loads
-    if (loads !== nothing)
-        df = DataFrames.DataFrame()
-        df[!,"DateTime"] = time_stamps 
-
-        for key in keys(area_bus_mapping_dict)
-            area_loads = filter(!isnothing,get.(Ref(loads),area_bus_mapping_dict[key],nothing)) # cannot directly broacast without filter because not all buses have loads
-            sum_area_load = sum(get.(get.(area_loads,"p_load",0),"values",0))
-
-            df[!,key] = sum_area_load
-        end
+    if (loads_DA !== nothing)
         folder_name = joinpath(ts_dir_name,"LOAD")
         mkpath(folder_name)
-        # Export CSV
-        csv_path = joinpath(folder_name,"DAY_AHEAD_regional_Load.csv")
-        CSV.write(csv_path, df,writeheader = true)
 
-        # Pointers Dict
-        num_areas = length(keys(area_bus_mapping_dict))
-        pointers_dict = Dict()
-        push!(pointers_dict,"simulation" =>fill("DAY_AHEAD",num_areas))
-        push!(pointers_dict,"category" =>fill("Area",num_areas))
-        push!(pointers_dict,"component_name" =>collect(keys(area_bus_mapping_dict)))
-        push!(pointers_dict,"name" =>fill("p_load",num_areas))
-        push!(pointers_dict,"normalization_factor" =>fill(1,num_areas))
-        push!(pointers_dict,"data_file" =>fill(csv_path,num_areas))
-        push!(pointers_dict,"resolution" =>fill(ts_resolution.value,num_areas))
+        loads_dict = Dict("DAY_AHEAD" => (loads_DA,time_stamps_DA,ts_resolution_DA.value))
+        if (loads_RT !== nothing)
+            push!(loads_dict,"REAL_TIME" => (loads_RT,time_stamps_RT,ts_resolution_RT.value))
+        end
+        for load_key in keys(loads_dict)
+            df = DataFrames.DataFrame()
+            df[!,"DateTime"] = loads_dict[load_key][2]
 
-        append!(df_ts_pointer,pointers_dict)
+            for key in keys(area_bus_mapping_dict)
+                area_loads = filter(!isnothing,get.(Ref(loads_dict[load_key][1]),area_bus_mapping_dict[key],nothing)) # cannot directly broacast without filter because not all buses have loads
+                sum_area_load = sum(get.(get.(area_loads,"p_load",0),"values",0))
+
+                df[!,key] = sum_area_load
+            end
+            
+            # Export CSV
+            csv_path = joinpath(folder_name,load_key*"_regional_Load.csv")
+            CSV.write(csv_path, df,writeheader = true)
+
+            # Pointers Dict
+            num_areas = length(keys(area_bus_mapping_dict))
+            pointers_dict = Dict()
+            push!(pointers_dict,"simulation" =>fill(load_key,num_areas))
+            push!(pointers_dict,"category" =>fill("Area",num_areas))
+            push!(pointers_dict,"component_name" =>collect(keys(area_bus_mapping_dict)))
+            push!(pointers_dict,"name" =>fill("p_load",num_areas))
+            push!(pointers_dict,"normalization_factor" =>fill(1,num_areas))
+            push!(pointers_dict,"data_file" =>fill(csv_path,num_areas))
+            push!(pointers_dict,"resolution" =>fill(loads_dict[load_key][3],num_areas))
+
+            append!(df_ts_pointer,pointers_dict)
+        end
     end
 
     # Export timeseries_pointers CSV
@@ -625,10 +521,16 @@ function time_series_processing(dir_name::String,areas::Dict{String, Any},system
     
     # Export simulation objects CSV
     simulation_objects_dict = Dict()
-    push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step","Look_Ahead_Resolution","Reserve_Products"])
+    push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step",
+                                   "Look_Ahead_Resolution","Reserve_Products"])
     reserve_types_DA = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
     reserve_types_DA = "("*join(reserve_types_DA,",")*")"
-    push!(simulation_objects_dict,"DAY_AHEAD" => [24, ts_resolution.value,first(time_stamps),last(time_stamps),24, ts_resolution.value,reserve_types_DA])
+
+    reserve_types_RT = ["Spin_Up", "Reg_Up", "Reg_Down"]
+    reserve_types_RT = "("*join(reserve_types_RT,",")*")"
+
+    push!(simulation_objects_dict,"DAY_AHEAD" => [24, ts_resolution_DA.value,first(time_stamps_DA),last(time_stamps_DA),24, ts_resolution_DA.value,reserve_types_DA])
+    push!(simulation_objects_dict,"REAL_TIME" => [24, ts_resolution_RT.value,first(time_stamps_RT),last(time_stamps_RT),2, ts_resolution_RT.value,reserve_types_RT])
 
     append!(df_simulation_objects,simulation_objects_dict)
     
@@ -782,7 +684,8 @@ function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{A
             push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
         end
     
-        if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc","pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
+        if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc",
+                         "pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
             push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,0))
         end
     end
@@ -827,19 +730,16 @@ function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{A
 end
 #####################################################################################
 # Main Function to parse EGRET JSON
-# Questions:
-# 1) Scaling factor for time series
-# 2) Missing CSP, Storage etc.
-# 3) Qualifying generators for reserves
-# 4) read in CSV we exported and make a EGRET System and compare
-# 5) Other ways to store time series. 
-# 6) Startup fuel dict values (322_CT_6 example).
 #####################################################################################
-function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing) 
+function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{Nothing, Dict{String, Any}} = nothing,location::Union{Nothing, String} = nothing) 
     # Initial Checks
 
-    if (~("elements" in keys(EGRET_json)) || ~("system" in keys(EGRET_json)))
-        error("Please check the EGRET System JSON")
+    if (~("elements" in keys(EGRET_json_DA)) || ~("system" in keys(EGRET_json_DA)))
+        error("Please check the EGRET DA System JSON")
+    end
+
+    if (~("elements" in keys(EGRET_json_RT)) || ~("system" in keys(EGRET_json_RT)))
+        error("Please check the EGRET RT System JSON")
     end
 
     #kwargs handling
@@ -849,7 +749,7 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
     end
     
     dt_now = Dates.format(Dates.now(),"dd-u-yy-H-M-S");
-    dir_name = joinpath(location,"data","Converted_CSV_Files",dt_now,EGRET_json["system"]["name"])
+    dir_name = joinpath(location,"data","Converted_CSV_Files",dt_now,EGRET_json_DA["system"]["name"])
 
     if (~isdir(dir_name))
         mkpath(dir_name)
@@ -858,50 +758,69 @@ function parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing,
     # Parsing different elements in EGRET System
     # Bus
     bus_mapping_dict, area_mapping_dict, load_ts_flag = 
-    if ("bus" in keys(EGRET_json["elements"]))
+    if ("bus" in keys(EGRET_json_DA["elements"]))
         @info "Parsing buses in EGRET JSON..."
-        if ("shunt" in keys(EGRET_json["elements"]))
-            parse_EGRET_bus(EGRET_json["elements"]["bus"],EGRET_json["elements"]["load"],dir_name,shunt = EGRET_json["elements"]["shunt"])
+        if ("shunt" in keys(EGRET_json_DA["elements"]))
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name,shunt = EGRET_json_DA["elements"]["shunt"])
         else
-            parse_EGRET_bus(EGRET_json["elements"]["bus"],EGRET_json["elements"]["load"],dir_name)
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name)
         end
     else
-        error("No buses in the EGRET System JSON")
+        error("No buses in the EGRET DA System JSON")
     end
 
     # Branch
-    if ("branch" in keys(EGRET_json["elements"]))
+    if ("branch" in keys(EGRET_json_DA["elements"]))
         @info "Parsing branches in EGRET JSON..."
-        parse_EGRET_branch(EGRET_json["elements"]["branch"],bus_mapping_dict,dir_name)
+        parse_EGRET_branch(EGRET_json_DA["elements"]["branch"],bus_mapping_dict,dir_name)
     else
-        error("No branches in the EGRET System JSON")
+        error("No branches in the EGRET DA System JSON")
     end
 
     # Generator
     gen_ts_flag = 
-    if ("generator" in keys(EGRET_json["elements"]))
+    if ("generator" in keys(EGRET_json_DA["elements"]))
         @info "Parsing generators in EGRET JSON..."
-        parse_EGRET_generator(EGRET_json["elements"]["generator"],bus_mapping_dict,dir_name)
+        parse_EGRET_generator(EGRET_json_DA["elements"]["generator"],bus_mapping_dict,dir_name)
     else
-        error("No generators in the EGRET System JSON")
+        error("No generators in the EGRET DA System JSON")
     end
 
     # Calling time series processing functions
     if (load_ts_flag && gen_ts_flag)
         @info "Parsing time series of loads and generators and generating time series metadata..."
-        time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],loads = EGRET_json["elements"]["load"],gen_components=EGRET_json["elements"]["generator"],
-                                  area_bus_mapping_dict=area_mapping_dict)
+        if (EGRET_json_RT !== nothing)
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                   gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict,
+                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"],
+                                   gen_components_RT=EGRET_json_RT["elements"]["generator"])
+        else
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                   gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
+        end
     elseif load_ts_flag
         @info "Parsing time series of loads and generating time series metadata..."
-        time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],loads = EGRET_json["elements"]["load"],area_bus_mapping_dict=area_mapping_dict)
+        if (EGRET_json_RT !== nothing)
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                   area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],
+                                   system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
+        else
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                   area_bus_mapping_dict=area_mapping_dict)
+        end
     elseif gen_ts_flag
         @info "Parsing time series of generators and generating time series metadata..."
-        time_series_processing(dir_name,EGRET_json["elements"]["area"],EGRET_json["system"],gen_components=EGRET_json["elements"]["generator"])
+        if (EGRET_json_RT !== nothing)
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
+                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
+        else
+            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"])
+        end
     else
-        @warn "No generator and load time series data available in the EGRET JSON"
+        @warn "No generator and load time series data available in the EGRET DA JSON"
     end
 
     @info "Successfully generated CSV files compatible with SIIP PSY tabular data parser here : $(dir_name)."
 
-    return dir_name, EGRET_json["system"]["baseMVA"]
+    return dir_name, EGRET_json_DA["system"]["baseMVA"]
 end
