@@ -5,6 +5,23 @@
 # Script to generate csv's from EGRET System JSON
 # Generate component CSV SIIP tabular parser expects from EGRET System JSON
 #####################################################################################
+# Auxilary Function
+# Convert DataFrames.DataFrame to JSON
+# Convert timeseries_pointers.csv to timeseries_pointers.JSON
+#####################################################################################
+function df_to_json(df::DataFrames.DataFrame,dir_name::String)
+    df[!,"normalization_factor"] .= "max"
+    pointers_dict = []
+    for row in eachrow(df)
+        push!(pointers_dict,Dict(fn=>get(row, fn,nothing) for fn ∈ DataFrames.names(df)))
+    end
+    
+    ts_json_location = joinpath(dir_name,"timeseries_pointers.json")
+    
+    open(ts_json_location,"w") do f
+        JSON.print(f, pointers_dict, 4)
+    end
+end
 # Helper Functions
 # Function to get p_max and p_min of Generator
 # p_max and p_min for Hydro and Renewable. For these types, p_max is a 
@@ -168,9 +185,11 @@ function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::
 
         df[!,"DateTime"] = comps_dict[comp_key][2]
         comp_names = []
+        comp_p_max = []
         for idx in 1:length(comps_dict[comp_key][1])
             df[!,comps_dict[comp_key][1][idx][1]] =  get(comps_dict[comp_key][1][idx][2],"p_max","None")["values"]
             push!(comp_names,comps_dict[comp_key][1][idx][1])
+            push!(comp_p_max,maximum(df[!,comps_dict[comp_key][1][idx][1]]))
         end
         # Export CSV
         csv_path = joinpath(dir_name,comp_key*"_"*gen_type*".csv")
@@ -180,13 +199,17 @@ function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::
         num_components = length(comp_names)
         pointers_dict = Dict()
         push!(pointers_dict,"simulation" =>fill(comp_key,num_components))
-        push!(pointers_dict,"category" =>fill("Generator",num_components))
-        push!(pointers_dict,"component_name" =>comp_names)
-        push!(pointers_dict,"name" =>fill("p_max",num_components))
-        push!(pointers_dict,"normalization_factor" =>fill(1,num_components))
-        push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
         push!(pointers_dict,"resolution" =>fill(comps_dict[comp_key][3],num_components))
-
+        push!(pointers_dict,"category" =>"Generator")
+        push!(pointers_dict,"component_name" =>comp_names)
+        push!(pointers_dict,"module" =>"PowerSystems")
+        push!(pointers_dict,"type" =>"SingleTimeSeries")
+        push!(pointers_dict,"name" =>"max_active_power")
+        push!(pointers_dict,"scaling_factor_multiplier" =>"get_max_active_power")
+        push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+        push!(pointers_dict,"normalization_factor" =>comp_p_max)
+        push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
+        
         append!(df_ts_pointer,pointers_dict)
     end
 end
@@ -269,12 +292,16 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
         # Timeseries pointers Dict to build the necessary CSV
         pointers_dict = Dict()
         push!(pointers_dict,"simulation" =>fill(area_key,num_areas))
-        push!(pointers_dict,"category" =>fill("Reserve",num_areas))
-        push!(pointers_dict,"component_name" =>object_names)
-        push!(pointers_dict,"name" =>fill("Requirement",num_areas))
-        push!(pointers_dict,"normalization_factor" =>fill(1.0,num_areas))
-        push!(pointers_dict,"data_file" =>data_files)
         push!(pointers_dict,"resolution" =>fill(areas_dict[area_key][3],num_areas))
+        push!(pointers_dict,"category" =>"Reserve")
+        push!(pointers_dict,"component_name" =>object_names)
+        push!(pointers_dict,"module" =>"PowerSystems")
+        push!(pointers_dict,"type" =>"SingleTimeSeries")
+        push!(pointers_dict,"name" =>"requirement")
+        push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
+        push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+        push!(pointers_dict,"normalization_factor" =>region_max_values)
+        push!(pointers_dict,"data_file" =>data_files)
 
         append!(df_ts_pointer,pointers_dict)
 
@@ -333,12 +360,16 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
             # Pointers Dict
             pointers_dict = Dict()
             push!(pointers_dict,"simulation" =>reg_up_key)
+            push!(pointers_dict,"resolution" =>regulation_dict[reg_up_key][4])
             push!(pointers_dict,"category" =>"Reserve")
             push!(pointers_dict,"component_name" =>reg_dir_dict[dir][3])
-            push!(pointers_dict,"name" =>"Requirement")
-            push!(pointers_dict,"normalization_factor" =>1.0)
+            push!(pointers_dict,"module" =>"PowerSystems")
+            push!(pointers_dict,"type" =>"SingleTimeSeries")
+            push!(pointers_dict,"name" =>"requirement")
+            push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
+            push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+            push!(pointers_dict,"normalization_factor" =>maximum(max_reserve_vals))
             push!(pointers_dict,"data_file" =>csv_path)
-            push!(pointers_dict,"resolution" =>regulation_dict[reg_up_key][4])
 
             append!(df_ts_pointer,pointers_dict)
             if (reg_up_key =="DAY_AHEAD")
@@ -390,12 +421,16 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
         # Pointers Dict
         pointers_dict = Dict()
         push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+        push!(pointers_dict,"resolution" =>ts_resolution_DA.value)
         push!(pointers_dict,"category" =>"Reserve")
         push!(pointers_dict,"component_name" =>flex_dir_dict[dir][3])
-        push!(pointers_dict,"name" =>"Requirement")
-        push!(pointers_dict,"normalization_factor" =>1)
+        push!(pointers_dict,"module" =>"PowerSystems")
+        push!(pointers_dict,"type" =>"SingleTimeSeries")
+        push!(pointers_dict,"name" =>"requirement")
+        push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
+        push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+        push!(pointers_dict,"normalization_factor" =>maximum(max_reserve_vals))
         push!(pointers_dict,"data_file" =>csv_path)
-        push!(pointers_dict,"resolution" =>ts_resolution_DA.value)
 
         append!(df_ts_pointer,pointers_dict)
 
@@ -488,10 +523,12 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
         for load_key in keys(loads_dict)
             df = DataFrames.DataFrame()
             df[!,"DateTime"] = loads_dict[load_key][2]
-
+            reg_load_max_vals = []
             for key in keys(area_bus_mapping_dict)
                 area_loads = filter(!isnothing,get.(Ref(loads_dict[load_key][1]),area_bus_mapping_dict[key],nothing)) # cannot directly broacast without filter because not all buses have loads
-                sum_area_load = sum(get.(get.(area_loads,"p_load",0),"values",0))
+                filtered_area_load_vals  = get.(get.(area_loads,"p_load",0),"values",0)
+                sum_area_load = sum(filtered_area_load_vals)
+                push!(reg_load_max_vals, maximum(sum_area_load))
 
                 df[!,key] = sum_area_load
             end
@@ -504,12 +541,16 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
             num_areas = length(keys(area_bus_mapping_dict))
             pointers_dict = Dict()
             push!(pointers_dict,"simulation" =>fill(load_key,num_areas))
-            push!(pointers_dict,"category" =>fill("Area",num_areas))
-            push!(pointers_dict,"component_name" =>collect(keys(area_bus_mapping_dict)))
-            push!(pointers_dict,"name" =>fill("p_load",num_areas))
-            push!(pointers_dict,"normalization_factor" =>fill(1,num_areas))
-            push!(pointers_dict,"data_file" =>fill(csv_path,num_areas))
             push!(pointers_dict,"resolution" =>fill(loads_dict[load_key][3],num_areas))
+            push!(pointers_dict,"category" =>"Area")
+            push!(pointers_dict,"component_name" =>collect(keys(area_bus_mapping_dict)))
+            push!(pointers_dict,"module" =>"PowerSystems")
+            push!(pointers_dict,"type" =>"SingleTimeSeries")
+            push!(pointers_dict,"name" =>"max_active_power")
+            push!(pointers_dict,"scaling_factor_multiplier" =>"get_max_active_power")
+            push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+            push!(pointers_dict,"normalization_factor" =>reg_load_max_vals)
+            push!(pointers_dict,"data_file" =>fill(csv_path,num_areas))
 
             append!(df_ts_pointer,pointers_dict)
         end
@@ -518,6 +559,9 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
     # Export timeseries_pointers CSV
     csv_path = joinpath(dir_name,"timeseries_pointers.csv")
     CSV.write(csv_path, df_ts_pointer,writeheader = true)
+
+    # Export timeseries_pointers JSON
+    df_to_json(df_ts_pointer,dir_name)
 
     # Export reserves metadata CSV
     csv_path = joinpath(dir_name,"reserves.csv")
