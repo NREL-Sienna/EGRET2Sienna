@@ -22,10 +22,10 @@ EGRET_json_RT = JSON.parsefile(Location_2);
 location, base_MVA,rt_flag = EGRET2SIIP.parse_EGRET_JSON(EGRET_json_DA,EGRET_json_RT=EGRET_json_RT);
 
 if (rt_flag)
-    sys_DA,sys_RT = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag);
+    sys_DA,sys_RT = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag,ts_pointers_file ="CSV");
 else
-    sys_DA = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag);
+    sys_DA = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag,ts_pointers_file="CSV");
 end
 
 #           (or)
-sys_DA, sys_RT = EGRET2SIIP.EGRET_TO_PSY(EGRET_json,EGRET_json_RT=EGRET_json_RT)
+sys_DA, sys_RT = EGRET2SIIP.EGRET_TO_PSY(EGRET_json_DA,EGRET_json_RT=EGRET_json_RT,ts_pointers_file="CSV");
