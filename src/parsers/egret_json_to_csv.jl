@@ -789,12 +789,12 @@ end
 #####################################################################################
 function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{Nothing, Dict{String, Any}} = nothing,location::Union{Nothing, String} = nothing) 
     # Initial Checks
-
-    if (~("elements" in keys(EGRET_json_DA)) || ~("system" in keys(EGRET_json_DA)))
+       
+    if (~(haskey(EGRET_json_DA, "elements")) || ~(haskey(EGRET_json_DA, "system")))
         error("Please check the EGRET DA System JSON")
     end
     if (EGRET_json_RT !== nothing)
-        if (~("elements" in keys(EGRET_json_RT)) || ~("system" in keys(EGRET_json_RT)))
+        if (~(haskey(EGRET_json_RT, "elements")) || ~(haskey(EGRET_json_RT, "system")))
             error("Please check the EGRET RT System JSON")
         end
     end
@@ -815,9 +815,9 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
     # Parsing different elements in EGRET System
     # Bus
     bus_mapping_dict, area_mapping_dict, load_ts_flag = 
-    if ("bus" in keys(EGRET_json_DA["elements"]))
+    if haskey(EGRET_json_DA["elements"], "bus")
         @info "Parsing buses in EGRET JSON..."
-        if ("shunt" in keys(EGRET_json_DA["elements"]))
+        if (haskey(EGRET_json_DA["elements"], "shunt"))
             parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name,shunt = EGRET_json_DA["elements"]["shunt"])
         else
             parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name)
@@ -827,7 +827,7 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
     end
 
     # Branch
-    if ("branch" in keys(EGRET_json_DA["elements"]))
+    if haskey(EGRET_json_DA["elements"], "branch")
         @info "Parsing branches in EGRET JSON..."
         parse_EGRET_branch(EGRET_json_DA["elements"]["branch"],bus_mapping_dict,dir_name)
     else
@@ -836,7 +836,7 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
 
     # Generator
     gen_ts_flag = 
-    if ("generator" in keys(EGRET_json_DA["elements"]))
+    if haskey(EGRET_json_DA["elements"], "generator")
         @info "Parsing generators in EGRET JSON..."
         parse_EGRET_generator(EGRET_json_DA["elements"]["generator"],bus_mapping_dict,dir_name)
     else
