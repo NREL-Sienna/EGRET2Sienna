@@ -1,10 +1,10 @@
-# EGRET2SIIP.jl
-## A Julia Package to convert EGRET System JSON to tabular data (RTS-GMLC format) and make a SIIP PSY System.
+# EGRET2Sienna.jl
+## A Julia Package to convert EGRET System JSON to tabular data (RTS-GMLC format) and make a Sienna PSY System.
 
 ## Introduction
 **Module Capabilities**
 * The module has functionality to convert a EGRET System JSON (currently DA Is supported) to tabular data formatted for the SIIP PSY tabular data parser.
-* The module also has a capability to build a SIIP PSY System from the converted tabular data. 
+* The module also has a capability to build a Sienna PSY System from the converted tabular data. 
 
 ## Usage at a Glance
 
@@ -22,7 +22,7 @@ parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing, String} 
 
 * parse_tabular_data() - takes two arguments, the folder with converted tabular data and base MVA of the System.
 
-This function makes SIIP PSY System from converted tabular data.
+This function makes Sienna PSY System from converted tabular data.
 ```
 parse_tabular_data(csv_dir::String,base_MVA::Float64) 
 ```
