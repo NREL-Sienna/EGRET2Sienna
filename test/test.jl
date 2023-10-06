@@ -12,8 +12,8 @@
 # Read EGRET System JSON
 #####################################################################################
 import JSON
-Location_1 = dirname(pwd())*"/test/DAY_AHEAD_Model_2020-07-01_2020-07-14.json"; 
-Location_2 = dirname(pwd())*"/test/REAL_TIME_Model_2020-07-01_2020-07-14.json";
+Location_1 = joinpath(@__DIR__,"test", "DAY_AHEAD_Model_2020-07-01_2020-07-14.json");
+Location_2 = joinpath(@__DIR__,"test", "REAL_TIME_Model_2020-07-01_2020-07-14.json");
 EGRET_json_DA = JSON.parsefile(Location_1);
 EGRET_json_RT = JSON.parsefile(Location_2);
 #####################################################################################
