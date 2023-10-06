@@ -10,7 +10,7 @@ Email: suryachandan.dhulipala@nrel.gov
 # EGRET --> SIIP Linkage Module
 # EGRET JSON --> CSV files formatted according to SIIP Tabular Data Parser Requirements --> SIIP PSY System
 #######################################################
-module EGRET2SIIP
+module EGRET2Sienna
 #################################################################################
 # Exports
 #################################################################################
