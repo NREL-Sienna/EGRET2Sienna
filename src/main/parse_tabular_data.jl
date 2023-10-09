@@ -1,14 +1,14 @@
 #####################################################
 # Surya
 # NREL
-# November 2021
-# Call SIIP PSY Tabular Data Parser
+# October 2023
+# Call Sienna PSY Tabular Data Parser
 #####################################################################################
 const PSY = PowerSystems
 #####################################################################################
 # Main Function
 #####################################################################################
-function parse_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bool;ts_pointers_file::Union{Nothing, String} = nothing) 
+function parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bool;ts_pointers_file::Union{Nothing, String} = nothing) 
 
     dir_name = @__DIR__
     user_descriptors_file = joinpath(dir_name,"Descriptors","user_descriptors.yaml") 

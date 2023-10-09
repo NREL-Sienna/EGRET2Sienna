@@ -6,17 +6,17 @@ NAERM Project Developers. See the top-level COPYRIGHT file for details.
 Author: Surya Chandan Dhulipala
 Email: suryachandan.dhulipala@nrel.gov
 """
-# November 2021
-# EGRET --> SIIP Linkage Module
-# EGRET JSON --> CSV files formatted according to SIIP Tabular Data Parser Requirements --> SIIP PSY System
+# October 2023
+# EGRET --> Sienna Linkage Module
+# EGRET JSON --> CSV files formatted according to Sienna Tabular Data Parser Requirements --> Sienna PSY System
 #######################################################
 module EGRET2Sienna
 #################################################################################
 # Exports
 #################################################################################
-export parse_EGRET_JSON
-export parse_tabular_data
-export EGRET_TO_PSY
+export parse_egretjson
+export parse_sienna_tabular_data
+export egret_to_sienna
 #################################################################################
 # Imports
 #################################################################################

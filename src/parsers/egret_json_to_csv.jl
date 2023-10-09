@@ -1,9 +1,9 @@
 #####################################################
 # Surya
 # NREL
-# October 2021
+# October 2023
 # Script to generate csv's from EGRET System JSON
-# Generate component CSV SIIP tabular parser expects from EGRET System JSON
+# Generate component CSV Sienna tabular parser expects from EGRET System JSON
 #####################################################################################
 # Auxilary Function
 # Convert DataFrames.DataFrame to JSON
@@ -22,6 +22,8 @@ function df_to_json(df::DataFrames.DataFrame,dir_name::String)
         JSON.print(f, pointers_dict, 4)
     end
 end
+# Check if a file passed is JSON file
+isjson = endswith(".json");
 # Helper Functions
 # Function to get p_max and p_min of Generator
 # p_max and p_min for Hydro and Renewable. For these types, p_max is a 
@@ -787,26 +789,50 @@ end
 #####################################################################################
 # Main Function to parse EGRET JSON
 #####################################################################################
-function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{Nothing, Dict{String, Any}} = nothing,location::Union{Nothing, String} = nothing) 
+function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,export_location::Union{Nothing, String} = nothing) 
     # Initial Checks
+    if (~isjson(EGRET_json_DA_location))
+        error("Please check the EGRET DA System JSON location passed, make sure it is a JSON file.")
+    end
+
+    EGRET_json_DA = 
+    try 
+        JSON.parsefile(EGRET_json_DA_location)
+    catch
+        error("Cannot parse the EGRET DA System JSON.")
+    end
        
     if (~(haskey(EGRET_json_DA, "elements")) || ~(haskey(EGRET_json_DA, "system")))
         error("Please check the EGRET DA System JSON")
     end
-    if (EGRET_json_RT !== nothing)
+
+    EGRET_json_RT = nothing
+    if (EGRET_json_RT_location !== nothing)
+
+        if (~isjson(EGRET_json_RT_location))
+            error("Please check the EGRET RT System JSON location passed, make sure it is a JSON file.")
+        end
+
+        EGRET_json_RT = 
+        try 
+            JSON.parsefile(EGRET_json_RT_location)
+        catch
+            error("Cannot parse the EGRET RT System JSON.")
+        end
+
         if (~(haskey(EGRET_json_RT, "elements")) || ~(haskey(EGRET_json_RT, "system")))
             error("Please check the EGRET RT System JSON")
         end
     end
 
     #kwargs handling
-    if (location === nothing)
-        location =dirname(dirname(@__DIR__))
+    if (export_location === nothing)
+        export_location =dirname(dirname(@__DIR__))
         @warn  "Location to save the exported tabular data not specified. Using the Converted_CSV_Files folder of the module."
     end
     
     dt_now = Dates.format(Dates.now(),"dd-u-yy-H-M-S");
-    dir_name = joinpath(location,"data","Converted_CSV_Files",dt_now,EGRET_json_DA["system"]["name"])
+    dir_name = joinpath(export_location,"data","Converted_CSV_Files",dt_now,EGRET_json_DA["system"]["name"])
 
     if (~isdir(dir_name))
         mkpath(dir_name)
@@ -881,7 +907,7 @@ function parse_EGRET_JSON(EGRET_json_DA::Dict{String, Any};EGRET_json_RT::Union{
         @warn "No generator and load time series data available in the EGRET DA JSON"
     end
 
-    @info "Successfully generated CSV files compatible with SIIP PSY tabular data parser here : $(dir_name)."
+    @info "Successfully generated CSV files compatible with Sienna PSY tabular data parser here : $(dir_name)."
 
     return dir_name, EGRET_json_DA["system"]["baseMVA"],rt_flag
 end

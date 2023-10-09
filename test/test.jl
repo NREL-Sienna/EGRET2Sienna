@@ -1,31 +1,28 @@
 #####################################################
 # Surya
 # NREL
-# November 2021
-# NAERM Threats
-# Testing of EGRET2SIIP module
+# October 2023
+# NAERM UC/ED
+# Testing of EGRET2Sienna module
 #######################################################
 # Loading the required packages
 #######################################################
-# Load EGRET2SIIP module here
+# Load EGRET2Sienna module here
 #####################################################################################
 # Read EGRET System JSON
 #####################################################################################
-import JSON
-Location_1 = joinpath(@__DIR__,"test", "DAY_AHEAD_Model_2020-07-01_2020-07-14.json");
-Location_2 = joinpath(@__DIR__,"test", "REAL_TIME_Model_2020-07-01_2020-07-14.json");
-EGRET_json_DA = JSON.parsefile(Location_1);
-EGRET_json_RT = JSON.parsefile(Location_2);
+DA_sys_location = joinpath(@__DIR__,"test", "DAY_AHEAD_Model_2020-07-01_2020-07-14.json");
+RT_sys_location = joinpath(@__DIR__,"test", "REAL_TIME_Model_2020-07-01_2020-07-14.json");
 #####################################################################################
 # Convert EGRET JSON to CSV in a format SIIP Tabular Data understands
 #####################################################################################
-location, base_MVA,rt_flag = EGRET2SIIP.parse_EGRET_JSON(EGRET_json_DA,EGRET_json_RT=EGRET_json_RT);
+location, base_MVA,rt_flag = EGRET2Sienna.parse_egretjson(DA_sys_location,EGRET_json_RT_location=RT_sys_location);
 
 if (rt_flag)
-    sys_DA,sys_RT = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag,ts_pointers_file ="CSV");
+    sys_DA,sys_RT = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file ="CSV");
 else
-    sys_DA = EGRET2SIIP.parse_tabular_data(location,base_MVA,rt_flag,ts_pointers_file="CSV");
+    sys_DA = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file="CSV");
 end
 
 #           (or)
-sys_DA, sys_RT = EGRET2SIIP.EGRET_TO_PSY(EGRET_json_DA,EGRET_json_RT=EGRET_json_RT,ts_pointers_file="CSV");
+sys_DA, sys_RT = EGRET2Sienna.egret_to_sienna(DA_sys_location,EGRET_json_RT_location=RT_sys_location,ts_pointers_file="CSV");
