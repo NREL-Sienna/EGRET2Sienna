@@ -12,26 +12,26 @@ The test folder has a test script on how to use the module. A basic usage of thi
 
 **Function Specifications**
 
-* parse_EGRET_JSON() - takes two arguments (one optional), the EGRET System JSON and location to save converted CSV files (optional) 
+* parse_egretjson() - takes two arguments (one optional), the EGRET System JSON and location to save converted CSV files (optional) 
 
 This function converts the EGRET System JSON to a tabular data format which can be used with SIIP tabular data parser. It follows a similar folder organization to RTS-GMLC SourceData. 
 ```
-parse_EGRET_JSON(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)
+parse_egretjson(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)
 ```
 **NOTE: If location to save the converted CSV files isn't specified, the module will use the 'Converted_CSV_Files' folder in the 'Data' folder of the repo.
 
-* parse_tabular_data() - takes two arguments, the folder with converted tabular data and base MVA of the System.
+* parse_sienna_tabular_data() - takes two arguments, the folder with converted tabular data and base MVA of the System.
 
 This function makes Sienna PSY System from converted tabular data.
 ```
-parse_tabular_data(csv_dir::String,base_MVA::Float64) 
+parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64) 
 ```
 **NOTE: csv_dir and base MVA are the outputs of parse_EGRET_JSON().
-* EGRET_TO_PSY() - takes two arguments (one optional), the EGRET System JSON and location to save converted CSV files (optional) 
+* egret_to_sienna() - takes two arguments (one optional), the EGRET System JSON and location to save converted CSV files (optional) 
 
 This function combines the functionality of both the functions above.
 ```
-EGRET_TO_PSY(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)
+egret_to_sienna(EGRET_json::Dict{String, Any};location::Union{Nothing, String} = nothing)
 ```
 
 ## Acknowledgments
