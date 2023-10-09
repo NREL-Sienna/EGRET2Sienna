@@ -4,8 +4,8 @@
 # October 2023
 # Main function for EGRET JSON --> CSV files formatted according to Sienna Tabular Data Parser Requirements --> Sienna PSY System
 #####################################################################################
-function egret_to_sienna(EGRET_json_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,export_location::Union{Nothing, String} = nothing,
-                      ts_pointers_file::Union{Nothing, String} = nothing)
+function egret_to_sienna(EGRET_json_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
+                         export_location::Union{Nothing, String} = nothing,ts_pointers_file::Union{Nothing, String} = nothing, serialize = false)
 
     if (ts_pointers_file === nothing)
     @warn "Time series pointers file type wasn't passed. Using timeseries_pointers.csv"
@@ -20,10 +20,10 @@ function egret_to_sienna(EGRET_json_location::String;EGRET_json_RT_location::Uni
     end
 
     if (rt_flag)
-        sys_DA,sys_RT = parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file=ts_pointers_file)
+        sys_DA,sys_RT = parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file=ts_pointers_file, serialize = serialize)
         return sys_DA,sys_RT
     else
-        sys_DA = parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file=ts_pointers_file)
+        sys_DA = parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file=ts_pointers_file, serialize = serialize)
         return sys_DA
     end
 end

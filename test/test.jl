@@ -26,3 +26,26 @@ end
 
 #           (or)
 sys_DA, sys_RT = EGRET2Sienna.egret_to_sienna(DA_sys_location,EGRET_json_RT_location=RT_sys_location,ts_pointers_file="CSV");
+
+# With Serialization of Sienna System - DA System
+location, base_MVA,rt_flag = EGRET2Sienna.parse_egretjson(DA_sys_location);
+
+if (rt_flag)
+    sys_DA,sys_RT = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file ="CSV", serialize = true);
+else
+    sys_DA = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file="CSV", serialize = true);
+end
+#           (or)
+sys_DA = EGRET2Sienna.egret_to_sienna(DA_sys_location,ts_pointers_file="CSV", serialize = true);
+
+# with export location passed
+location, base_MVA,rt_flag = EGRET2Sienna.parse_egretjson(DA_sys_location, export_location = "/Users/sdhulipa/Desktop/Misc./temp/EGRET2SIIP-Test");
+
+if (rt_flag)
+    sys_DA,sys_RT = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file ="CSV", serialize = true);
+else
+    sys_DA = EGRET2Sienna.parse_sienna_tabular_data(location,base_MVA,rt_flag,ts_pointers_file="CSV", serialize = true);
+end
+#           (or)
+sys_DA = EGRET2Sienna.egret_to_sienna(DA_sys_location,ts_pointers_file="CSV", serialize = true, 
+                                              export_location = "/Users/sdhulipa/Desktop/Misc./temp/EGRET2SIIP-Test");

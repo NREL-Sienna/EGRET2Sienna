@@ -8,7 +8,7 @@ const PSY = PowerSystems
 #####################################################################################
 # Main Function
 #####################################################################################
-function parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bool;ts_pointers_file::Union{Nothing, String} = nothing) 
+function parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bool;ts_pointers_file::Union{Nothing, String} = nothing, serialize = false) 
 
     dir_name = @__DIR__
     user_descriptors_file = joinpath(dir_name,"Descriptors","user_descriptors.yaml") 
@@ -43,9 +43,34 @@ function parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bo
     if (rt_flag)
         sys_RT = PSY.System(rawsys; time_series_resolution = Dates.Minute(5));
         @info "Successfully generated both DA and RT PSY Systems."
+      
+        if serialize
+            sienna_sys_path = mkpath(joinpath(csv_dir, "Sienna_System"))
+
+            # DA
+            sienna_DA_sys_path = mkpath(joinpath(csv_dir, "Sienna_System", "DA"))
+            @info "Serializing the DA Sienna System to $(sienna_DA_sys_path) ..."
+            PSY.to_json(sys_DA,joinpath(sienna_DA_sys_path,"DA_sys.json"), force = true, runchecks = false)
+
+            # RT
+            sienna_RT_sys_path = mkpath(joinpath(csv_dir, "Sienna_System", "RT"))
+            @info "Serializing the RT Sienna System to $(sienna_RT_sys_path) ..."
+            PSY.to_json(sys_RT,joinpath(sienna_RT_sys_path,"RT_sys.json"), force = true, runchecks = false)
+        end
+
         return sys_DA, sys_RT
     else
         @info "Successfully generated DA PSY System."
+
+        if serialize
+            sienna_sys_path = mkpath(joinpath(csv_dir, "Sienna_System"))
+
+            # DA
+            sienna_DA_sys_path = mkpath(joinpath(csv_dir, "Sienna_System", "DA"))
+            @info "Serializing the DA Sienna System to $(sienna_DA_sys_path) ..."
+            PSY.to_json(sys_DA,joinpath(sienna_DA_sys_path,"DA_sys.json"), force = true, runchecks = false)
+        end
+        
         return sys_DA
     end
 end

@@ -169,8 +169,9 @@ end
 #####################################################################################
 # Common function to make CSV's related to generator time series data
 #####################################################################################
-function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::String,components_DA::Vector{Any},df_ts_pointer::DataFrames.DataFrame,gen_type::String;
-                                time_stamps_RT::Union{Nothing, Vector{Dates.DateTime}} = nothing,components_RT::Union{Nothing, Vector{Any}} = nothing)
+function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::String,components_DA::Vector{Any},df_ts_pointer::DataFrames.DataFrame,
+                               gen_type::String;time_stamps_RT::Union{Nothing, Vector{Dates.DateTime}} = nothing,
+                               components_RT::Union{Nothing, Vector{Any}} = nothing)
 
     ts_resolution_DA = (Dates.Second(last(time_stamps_DA) - first(time_stamps_DA)))/(length(time_stamps_DA)-1)
     if (time_stamps_RT !== nothing)
@@ -219,10 +220,11 @@ end
 # Parse time series data
 # **TODO: Need to be generaized to handle RT Systems and reserves
 #####################################################################################
-function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},system_DA::Dict{String, Any};loads_DA::Union{Nothing, Dict{String, Any}} = nothing,
-                                area_bus_mapping_dict::Union{Nothing, Dict{Any, Any}} = nothing,gen_components_DA::Union{Nothing, Dict{String, Any}} = nothing,
-                                areas_RT::Union{Nothing, Dict{String, Any}} = nothing,system_RT::Union{Nothing, Dict{String, Any}} = nothing,
-                                loads_RT::Union{Nothing, Dict{String, Any}} = nothing,gen_components_RT::Union{Nothing, Dict{String, Any}} = nothing)
+function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},system_DA::Dict{String, Any};
+                                loads_DA::Union{Nothing, Dict{String, Any}} = nothing,area_bus_mapping_dict::Union{Nothing, Dict{Any, Any}} = nothing,
+                                gen_components_DA::Union{Nothing, Dict{String, Any}} = nothing,areas_RT::Union{Nothing, Dict{String, Any}} = nothing,
+                                system_RT::Union{Nothing, Dict{String, Any}} = nothing,loads_RT::Union{Nothing, Dict{String, Any}} = nothing,
+                                gen_components_RT::Union{Nothing, Dict{String, Any}} = nothing)
     #Time stamp processing
     # Day-Ahead
     rt_flag = false
@@ -327,7 +329,8 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
     # Regulation Up & Down
     # Up & Down
     # Check if RT System is passed
-    reg_dir_dict = Dict([("Up", ("regulation_up_requirement","_regional_Reg_Up.csv","Reg_Up")), ("Down", ("regulation_down_requirement","_regional_Reg_Down.csv","Reg_Down"))]);
+    reg_dir_dict = Dict([("Up", ("regulation_up_requirement","_regional_Reg_Up.csv","Reg_Up")), 
+                         ("Down", ("regulation_down_requirement","_regional_Reg_Down.csv","Reg_Down"))]);
     
     regulation_dict = Dict("DAY_AHEAD" => (system_DA,time_stamps_DA,24,ts_resolution_DA.value))
     if (system_RT !== nothing)
@@ -393,7 +396,8 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
     # Flexible Ramp Up & Down
     # Not available for RT System (must be handled)
     # Up
-    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
+    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), 
+                          ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
 
     for dir in keys(flex_dir_dict)
         df = DataFrames.DataFrame()
@@ -506,7 +510,8 @@ function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},sys
                 folder_name = joinpath(ts_dir_name,u_t_key)
                 mkpath(folder_name)
                 if (length(gen_unit_dict[u_t_key][2]) > 0)
-                    make_gen_time_series!(time_stamps_DA,folder_name,gen_unit_dict[u_t_key][1],df_ts_pointer,u_t_key,time_stamps_RT= time_stamps_RT,components_RT = gen_unit_dict[u_t_key][2])
+                    make_gen_time_series!(time_stamps_DA,folder_name,gen_unit_dict[u_t_key][1],df_ts_pointer,u_t_key,time_stamps_RT= time_stamps_RT,
+                                          components_RT = gen_unit_dict[u_t_key][2])
                 else
                     make_gen_time_series!(time_stamps_DA,folder_name,gen_unit_dict[u_t_key][1],df_ts_pointer,u_t_key)
                 end
@@ -789,7 +794,8 @@ end
 #####################################################################################
 # Main Function to parse EGRET JSON
 #####################################################################################
-function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,export_location::Union{Nothing, String} = nothing) 
+function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
+                         export_location::Union{Nothing, String} = nothing) 
     # Initial Checks
     if (~isjson(EGRET_json_DA_location))
         error("Please check the EGRET DA System JSON location passed, make sure it is a JSON file.")
