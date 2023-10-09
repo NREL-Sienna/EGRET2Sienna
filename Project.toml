@@ -1,7 +1,7 @@
 name = "EGRET2Sienna"
 uuid = "f4eccc7a-2a5e-4df9-9560-548aa10067ea"
 authors = ["Surya Chandan Dhulipala <suryachandan.dhulipala@nrel.gov>"]
-version = "1.1.0"
+version = "2.0.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -14,5 +14,5 @@ PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 CSV = "~0.10"
 DataFrames = "~1.6"
 JSON = "~0.21"
-PowerSystems = "~1.25"
+PowerSystems = "~2.6"
 julia = "^1.8"
