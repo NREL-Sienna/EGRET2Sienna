@@ -49,3 +49,10 @@ end
 #           (or)
 sys_DA = EGRET2Sienna.egret_to_sienna(DA_sys_location,ts_pointers_file="CSV", serialize = true, 
                                               export_location = "/Users/sdhulipa/Desktop/Misc./temp/EGRET2SIIP-Test");
+
+
+# Passing the raw EGRET JSON data
+using JSON
+EGRET_json_DA = JSON.parsefile(DA_sys_location)
+sys_DA = EGRET2Sienna.egret_to_sienna(EGRET_json_DA,ts_pointers_file="CSV", serialize = true, 
+                                              export_location = "/Users/sdhulipa/Desktop/Misc./temp/EGRET2SIIP-Test");

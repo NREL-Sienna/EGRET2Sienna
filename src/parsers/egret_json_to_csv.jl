@@ -794,37 +794,15 @@ end
 #####################################################################################
 # Main Function to parse EGRET JSON
 #####################################################################################
-function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
-                         export_location::Union{Nothing, String} = nothing) 
-    # Initial Checks
-    if (~isjson(EGRET_json_DA_location))
-        error("Please check the EGRET DA System JSON location passed, make sure it is a JSON file.")
-    end
-
-    EGRET_json_DA = 
-    try 
-        JSON.parsefile(EGRET_json_DA_location)
-    catch
-        error("Cannot parse the EGRET DA System JSON.")
-    end
-       
+function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT} = nothing,
+                         export_location::Union{Nothing, String} = nothing) where {DICT <: Dict} 
+    
+    # Checks
     if (~(haskey(EGRET_json_DA, "elements")) || ~(haskey(EGRET_json_DA, "system")))
         error("Please check the EGRET DA System JSON")
     end
 
-    EGRET_json_RT = nothing
-    if (EGRET_json_RT_location !== nothing)
-
-        if (~isjson(EGRET_json_RT_location))
-            error("Please check the EGRET RT System JSON location passed, make sure it is a JSON file.")
-        end
-
-        EGRET_json_RT = 
-        try 
-            JSON.parsefile(EGRET_json_RT_location)
-        catch
-            error("Cannot parse the EGRET RT System JSON.")
-        end
+    if (EGRET_json_RT !== nothing)
 
         if (~(haskey(EGRET_json_RT, "elements")) || ~(haskey(EGRET_json_RT, "system")))
             error("Please check the EGRET RT System JSON")
@@ -917,3 +895,38 @@ function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::
 
     return dir_name, EGRET_json_DA["system"]["baseMVA"],rt_flag
 end
+
+
+function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
+                         export_location::Union{Nothing, String} = nothing) 
+    
+    # Initial Checks
+    if (~isjson(EGRET_json_DA_location))
+        error("Please check the EGRET DA System JSON location passed, make sure it is a JSON file.")
+    end
+
+    EGRET_json_DA = 
+    try 
+        JSON.parsefile(EGRET_json_DA_location)
+    catch
+        error("Cannot parse the EGRET DA System JSON.")
+    end
+
+    EGRET_json_RT = nothing
+    if (EGRET_json_RT_location !== nothing)
+
+        if (~isjson(EGRET_json_RT_location))
+            error("Please check the EGRET RT System JSON location passed, make sure it is a JSON file.")
+        end
+
+        EGRET_json_RT = 
+        try 
+            JSON.parsefile(EGRET_json_RT_location)
+        catch
+            error("Cannot parse the EGRET RT System JSON.")
+        end
+    end
+
+    parse_egretjson(EGRET_json_DA, EGRET_json_RT = EGRET_json_RT, export_location = export_location)
+end
+
