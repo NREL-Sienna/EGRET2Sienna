@@ -30,7 +30,7 @@ isjson = endswith(".json");
 # time series and not an Int64. Currently, assigning max of time series values
 # as for these types of Generator
 #####################################################################################
-function parse_p_minmax!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, Any})
+function parse_p_minmax!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: Dict}
     p_max_values = []
     p_min_values = []
     ts_flag = 0
@@ -76,7 +76,7 @@ end
 # f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
 # Others: float(row[f'HR_incr_{i}'] = ((f[i] - f[i-1])/(x[i] - x[i-1]))*1000
 #####################################################################################
-function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, Any},num_data_points::Int64)
+function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_data_points::Int64) where {DICT <: Dict}
     for i in 1:num_data_points
         push!(comp_dict,"output_pct_$(i-1)" =>[])
         push!(comp_dict,"HR_avg_$(i-1)" =>[])
@@ -131,7 +131,7 @@ startup_time = (float(row['Start Time Hot Hr']),
                 float(row['Start Time Cold Hr']))
 =#
 #####################################################################################
-function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::Dict{Any, Any})
+function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: Dict}
 
     lookup_dict = Dict([(1, ("Start Time Cold Hr","Start Heat Cold MBTU")), (2, ("Start Time Warm Hr","Start Heat Warm MBTU")),
                        (3, ("Start Time Hot Hr","Start Heat Hot MBTU"))]);
@@ -220,11 +220,11 @@ end
 # Parse time series data
 # **TODO: Need to be generaized to handle RT Systems and reserves
 #####################################################################################
-function time_series_processing(dir_name::String,areas_DA::Dict{String, Any},system_DA::Dict{String, Any};
-                                loads_DA::Union{Nothing, Dict{String, Any}} = nothing,area_bus_mapping_dict::Union{Nothing, Dict{Any, Any}} = nothing,
-                                gen_components_DA::Union{Nothing, Dict{String, Any}} = nothing,areas_RT::Union{Nothing, Dict{String, Any}} = nothing,
-                                system_RT::Union{Nothing, Dict{String, Any}} = nothing,loads_RT::Union{Nothing, Dict{String, Any}} = nothing,
-                                gen_components_RT::Union{Nothing, Dict{String, Any}} = nothing)
+function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
+                                loads_DA::Union{Nothing, DICT} = nothing,area_bus_mapping_dict::Union{Nothing, Dict{Any,Any}} = nothing,
+                                gen_components_DA::Union{Nothing, DICT} = nothing,areas_RT::Union{Nothing, DICT} = nothing,
+                                system_RT::Union{Nothing, DICT} = nothing,loads_RT::Union{Nothing, DICT} = nothing,
+                                gen_components_RT::Union{Nothing, DICT} = nothing) where {DICT <: Dict}
     #Time stamp processing
     # Day-Ahead
     rt_flag = false
@@ -606,7 +606,7 @@ end
 # Functions to parse EGRET Bus
 # Note: Load MW and Load MVAR assigned as max of the time series data.
 #####################################################################################
-function parse_EGRET_bus(components::Dict{String,Any},loads::Dict{String, Any},dir_name::String;shunt::Union{Nothing, Dict{String, Any}} = nothing)
+function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::String;shunt::Union{Nothing, Dict{String, Any}} = nothing) where {DICT <: Dict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
@@ -688,7 +688,7 @@ end
 # Functions to parse EGRET Branch
 # Add IDs for from and to and check with original source data
 #####################################################################################
-function parse_EGRET_branch(components::Dict{String,Any},mapping_dict::Dict{Any,Any},dir_name::String)
+function parse_EGRET_branch(components::DICT,mapping_dict::Dict{Any,Any},dir_name::String) where {DICT <: Dict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
@@ -735,7 +735,7 @@ end
 # **Note EGRET doesn't handle CSP units. SO, if there are any CSP units in the root dataset,
 # they will not show up in the converted PSY System!
 #####################################################################################
-function parse_EGRET_generator(components::Dict{String,Any},mapping_dict::Dict{Any,Any},dir_name::String)
+function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_name::String) where {DICT <: Dict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
