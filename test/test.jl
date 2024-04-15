@@ -57,3 +57,6 @@ DA_sys_location = joinpath(@__DIR__,"test", "DAY_AHEAD_Model_2020-07-01_2020-07-
 EGRET_json_DA = JSON.parsefile(DA_sys_location)
 sys_DA = EGRET2Sienna.egret_to_sienna(EGRET_json_DA,ts_pointers_file="CSV", serialize = true, 
                                               export_location = "/Users/sdhulipa/Desktop/Misc./temp/EGRET2SIIP-Test");
+
+
+sys_DA = EGRET2Sienna.egret_to_sienna("/Users/sdhulipa/Old Mac Backup/Desktop/OneDrive-Backup/NREL-Github/EGRET2SIIP/test/2020-01-27.json",export_location = "/Users/sdhulipa/Old Mac Backup/Desktop/Misc./temp/EGRET2SIIP-Test")

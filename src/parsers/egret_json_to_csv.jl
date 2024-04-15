@@ -76,13 +76,13 @@ end
 # f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
 # Others: float(row[f'HR_incr_{i}'] = ((f[i] - f[i-1])/(x[i] - x[i-1]))*1000
 #####################################################################################
-function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_data_points::Int64) where {DICT <: Dict}
+function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_data_points::Int64, fuel_dict_key::String) where {DICT <: Dict}
     for i in 1:num_data_points
         push!(comp_dict,"output_pct_$(i-1)" =>[])
         push!(comp_dict,"HR_avg_$(i-1)" =>[])
     end
 
-    for (comp_p_max,fuel_dict) in zip(get(comp_dict,"p_max","None"),get.(comp_values,"p_fuel","None"))
+    for (comp_p_max,fuel_dict) in zip(get(comp_dict,"p_max","None"),get.(comp_values,fuel_dict_key,"None"))
         if (fuel_dict != "None")
             if (length(fuel_dict["values"]) < num_data_points)
                 for i in 1:length(fuel_dict["values"])
@@ -132,6 +132,10 @@ startup_time = (float(row['Start Time Hot Hr']),
 =#
 #####################################################################################
 function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: Dict}
+    startup_fuel_dict_key = "startup_fuel"
+    if (all(get.(comp_values,startup_fuel_dict_key,"None") .== "None"))
+        startup_fuel_dict_key = "startup_cost"
+    end
 
     lookup_dict = Dict([(1, ("Start Time Cold Hr","Start Heat Cold MBTU")), (2, ("Start Time Warm Hr","Start Heat Warm MBTU")),
                        (3, ("Start Time Hot Hr","Start Heat Hot MBTU"))]);
@@ -143,7 +147,7 @@ function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DI
     push!(comp_dict,"Start Time Warm Hr" =>[])
     push!(comp_dict,"Start Time Cold Hr" =>[])
    
-    for startup_dict in get.(comp_values,"startup_fuel","None")
+    for startup_dict in get.(comp_values,startup_fuel_dict_key,"None")
         if (startup_dict != "None")
             for i in 1:3
                 try
@@ -220,7 +224,7 @@ end
 # Parse time series data
 # **TODO: Need to be generaized to handle RT Systems and reserves
 #####################################################################################
-function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
+function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{String}},system_DA::DICT;
                                 loads_DA::Union{Nothing, DICT} = nothing,area_bus_mapping_dict::Union{Nothing, Dict{Any,Any}} = nothing,
                                 gen_components_DA::Union{Nothing, DICT} = nothing,areas_RT::Union{Nothing, DICT} = nothing,
                                 system_RT::Union{Nothing, DICT} = nothing,loads_RT::Union{Nothing, DICT} = nothing,
@@ -229,8 +233,28 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
     # Day-Ahead
     rt_flag = false
 
+    # Some versions of EGRET JSON has different keys for "bus" and "load", in which case area_bus_mapping_dict
+    # will not be enough to map from areas to loads, handle this here.
+
+    for (key,vals) in area_bus_mapping_dict
+        area_load_keys = []
+        for val in vals
+            load_bus_idx = findfirst(get.(values(loads_DA),"bus","None") .== val)
+            if ~isnothing(load_bus_idx)
+                push!(area_load_keys,collect(keys(loads_DA))[load_bus_idx])
+            end
+        end
+        area_bus_mapping_dict[key] = area_load_keys
+    end
+
     date_format = Dates.DateFormat("Y-m-d H:M")
-    time_stamps_DA = Dates.DateTime.(system_DA["time_keys"],date_format)
+    time_stamps_DA = 
+    try
+        Dates.DateTime.(system_DA["time_keys"],date_format)
+    catch
+        @warn "System timestamps in EGRET JSON are not formatted correctly. Assuming default timestamps ..."
+        collect(StepRange(Dates.DateTime("2024-01-01", date_format), Dates.Hour(1), Dates.DateTime("2024-01-01", date_format) +  Dates.Hour((length(system_DA["time_keys"])-1)));)
+    end
     ts_resolution_DA = (Dates.Second(last(time_stamps_DA) - first(time_stamps_DA)))/(length(time_stamps_DA)-1)
 
     # Real-Time
@@ -258,72 +282,97 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
 
     #Reserves
     #**TODO - This currently assumes every EGRET JSON passed has all the reserve products RTS_GMLC has. There is an easy fix for this.
+    gen_fuel_unit_types = 
+    if  (~all(haskey.(values(gen_components_DA),"unit_type")))
+        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"generator_type","None")) 
+        if ~(u_t in ["PrimarySource.NUCLEAR thermal"])]
+    else
+        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None")) 
+        if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
+    end
+
+    for (key,val) in gen_components_DA
+        if ~(haskey(val, "unit_type"))
+            val["unit_type"] = val["fuel"]
+        end
+    end
+    #=
     gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None")) 
-                                if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
+                                if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV", "PrimarySource.NUCLEAR PrimarySource.NUCLEAR"])]
+    =#
     gen_fuel_unit_types = "("*join(gen_fuel_unit_types,",")*")"
-
-    all_areas_DA = "("*join(collect(keys(areas_DA)),",")*")"
-
+    
+    all_areas_DA =
+    if (areas_DA isa Vector{String})
+        "("*join(collect(keys(areas_DA)),",")*")"
+    else
+        "("*join(areas_DA,",")*")"
+    end
+   
     # Spinning Reserves
     folder_name = joinpath(ts_dir_name,"RESERVES")
     mkpath(folder_name)
     # Check if RT System is passed
-    areas_dict = Dict("DAY_AHEAD" => (areas_DA,time_stamps_DA,ts_resolution_DA.value))
-    if (areas_RT !== nothing)
-        push!(areas_dict,"REAL_TIME" => (areas_RT,time_stamps_RT,ts_resolution_RT.value))
-    end
-
-    for area_key in keys(areas_dict)
-        object_names = []
-        data_files = []
-        region_max_values = []
-        for (idx,key) in enumerate(keys(areas_dict[area_key][1]))
-            df = DataFrames.DataFrame()
-            df[!,"DateTime"] = areas_dict[area_key][2]
-            column_name = "Spin_Up_R"*"$idx"
-            push!(object_names,column_name)
-            df[!,column_name] = areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]
-            push!(region_max_values,maximum(areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]))
-
-            # Export CSV
-            csv_name = area_key*"_regional_Spin_Up_R"* "$idx" *".csv"
-            csv_path = joinpath(folder_name,csv_name)
-            push!(data_files,csv_path)
-            CSV.write(csv_path, df,writeheader = true)
+    if ~(areas_DA isa Vector{String})
+        areas_dict = Dict("DAY_AHEAD" => (areas_DA,time_stamps_DA,ts_resolution_DA.value))
+        if (areas_RT !== nothing)
+            push!(areas_dict,"REAL_TIME" => (areas_RT,time_stamps_RT,ts_resolution_RT.value))
         end
-        # Pointers Dict
-        num_areas = length(keys(area_bus_mapping_dict))
-        # Timeseries pointers Dict to build the necessary CSV
-        pointers_dict = Dict()
-        push!(pointers_dict,"simulation" =>fill(area_key,num_areas))
-        push!(pointers_dict,"resolution" =>fill(areas_dict[area_key][3],num_areas))
-        push!(pointers_dict,"category" =>"Reserve")
-        push!(pointers_dict,"component_name" =>object_names)
-        push!(pointers_dict,"module" =>"PowerSystems")
-        push!(pointers_dict,"type" =>"SingleTimeSeries")
-        push!(pointers_dict,"name" =>"requirement")
-        push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
-        push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
-        push!(pointers_dict,"normalization_factor" =>region_max_values)
-        push!(pointers_dict,"data_file" =>data_files)
 
-        append!(df_ts_pointer,pointers_dict)
+        for area_key in keys(areas_dict)
+            object_names = []
+            data_files = []
+            region_max_values = []
+            for (idx,key) in enumerate(keys(areas_dict[area_key][1]))
+                df = DataFrames.DataFrame()
+                df[!,"DateTime"] = areas_dict[area_key][2]
+                column_name = "Spin_Up_R"*"$idx"
+                push!(object_names,column_name)
+                df[!,column_name] = areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]
+                push!(region_max_values,maximum(areas_dict[area_key][1][key]["spinning_reserve_requirement"]["values"]))
 
-        # Reserves Metadata Dict
-        if (area_key =="DAY_AHEAD")
-            # Reserves Metadata Dict to build the necessary CSV
-            reserves_metadata_dict = Dict()
+                # Export CSV
+                csv_name = area_key*"_regional_Spin_Up_R"* "$idx" *".csv"
+                csv_path = joinpath(folder_name,csv_name)
+                push!(data_files,csv_path)
+                CSV.write(csv_path, df,writeheader = true)
+            end
+            # Pointers Dict
+            num_areas = length(keys(area_bus_mapping_dict))
+            # Timeseries pointers Dict to build the necessary CSV
+            pointers_dict = Dict()
+            push!(pointers_dict,"simulation" =>fill(area_key,num_areas))
+            push!(pointers_dict,"resolution" =>fill(areas_dict[area_key][3],num_areas))
+            push!(pointers_dict,"category" =>"Reserve")
+            push!(pointers_dict,"component_name" =>object_names)
+            push!(pointers_dict,"module" =>"PowerSystems")
+            push!(pointers_dict,"type" =>"SingleTimeSeries")
+            push!(pointers_dict,"name" =>"requirement")
+            push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
+            push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+            push!(pointers_dict,"normalization_factor" =>region_max_values)
+            push!(pointers_dict,"data_file" =>data_files)
 
-            push!(reserves_metadata_dict, "Reserve Product"=>object_names)
-            push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
-            push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
-            push!(reserves_metadata_dict, "Eligible Regions"=>collect(keys(areas_DA)))
-            push!(reserves_metadata_dict, "Eligible Device Categories"=>fill("Generator",num_areas))
-            push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,num_areas))
-            push!(reserves_metadata_dict, "Direction"=>fill("Up",num_areas))
+            append!(df_ts_pointer,pointers_dict)
 
-            append!(df_reserves_metadata,reserves_metadata_dict)
+            # Reserves Metadata Dict
+            if (area_key =="DAY_AHEAD")
+                # Reserves Metadata Dict to build the necessary CSV
+                reserves_metadata_dict = Dict()
+
+                push!(reserves_metadata_dict, "Reserve Product"=>object_names)
+                push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
+                push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
+                push!(reserves_metadata_dict, "Eligible Regions"=>collect(keys(areas_DA)))
+                push!(reserves_metadata_dict, "Eligible Device Categories"=>fill("Generator",num_areas))
+                push!(reserves_metadata_dict, "Eligible Device SubCategories"=>fill(gen_fuel_unit_types,num_areas))
+                push!(reserves_metadata_dict, "Direction"=>fill("Up",num_areas))
+
+                append!(df_reserves_metadata,reserves_metadata_dict)
+            end
         end
+    else
+        @warn "No spinning reserve requirements avaiable in EGRET JSON."
     end
 
     # Regulation Up & Down
@@ -336,16 +385,83 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
     if (system_RT !== nothing)
         push!(regulation_dict,"REAL_TIME" => (system_RT,time_stamps_RT,288,ts_resolution_RT.value))
     end
-    for dir in keys(reg_dir_dict)
-        for reg_up_key in keys(regulation_dict)
+    if (haskey(system_DA, "regulation_up_requirement") && haskey(system_DA, "regulation_down_requirement"))
+        for dir in keys(reg_dir_dict)
+            for reg_up_key in keys(regulation_dict)
+                df = DataFrames.DataFrame()
+                max_reserve_vals = []
+                for i in 1:length(regulation_dict[reg_up_key][2])÷ regulation_dict[reg_up_key][3]
+                    reserve_dict = Dict()
+                    start_data_range = ((i-1)*regulation_dict[reg_up_key][3] +1)
+                    data_range = range(start_data_range,length=regulation_dict[reg_up_key][3])
+                    start_ts = regulation_dict[reg_up_key][2][start_data_range]
+                    for (idx,val) in enumerate(regulation_dict[reg_up_key][1][reg_dir_dict[dir][1]]["values"][data_range])
+                        push!(reserve_dict, string(idx) => val)
+                    end
+                    max_reserve_val = maximum(values(reserve_dict))
+                    push!(max_reserve_vals,max_reserve_val)
+                    year_value = Dates.Year(start_ts).value
+                    month_value = Dates.Month(start_ts).value
+                    day_value = Dates.Day(start_ts).value
+                    push!(reserve_dict,"Year" =>year_value)
+                    push!(reserve_dict,"Month" => month_value)
+                    push!(reserve_dict,"Day" =>day_value)
+
+                    append!(df,reserve_dict)
+                end
+                csv_path = joinpath(folder_name,reg_up_key*reg_dir_dict[dir][2])
+                CSV.write(csv_path, df,writeheader = true)
+
+                # Pointers Dict
+                pointers_dict = Dict()
+                push!(pointers_dict,"simulation" =>reg_up_key)
+                push!(pointers_dict,"resolution" =>regulation_dict[reg_up_key][4])
+                push!(pointers_dict,"category" =>"Reserve")
+                push!(pointers_dict,"component_name" =>reg_dir_dict[dir][3])
+                push!(pointers_dict,"module" =>"PowerSystems")
+                push!(pointers_dict,"type" =>"SingleTimeSeries")
+                push!(pointers_dict,"name" =>"requirement")
+                push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
+                push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
+                push!(pointers_dict,"normalization_factor" =>maximum(max_reserve_vals))
+                push!(pointers_dict,"data_file" =>csv_path)
+
+                append!(df_ts_pointer,pointers_dict)
+                if (reg_up_key =="DAY_AHEAD")
+                    # Reserves Metadata Dict
+                    reserves_metadata_dict = Dict()
+                    push!(reserves_metadata_dict, "Reserve Product"=>reg_dir_dict[dir][3])
+                    push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
+                    push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
+                    push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
+                    push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
+                    push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
+                    push!(reserves_metadata_dict, "Direction"=>dir)
+
+                    append!(df_reserves_metadata,reserves_metadata_dict)
+                end
+            end
+        end
+    else
+        @warn "No regulation requirements avaiable in EGRET JSON."
+    end
+
+    # Flexible Ramp Up & Down
+    # Not available for RT System (must be handled)
+    # Up
+    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), 
+                          ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
+
+    if (haskey(system_DA, "flexible_ramp_up_requirement") && haskey(system_DA, "flexible_ramp_down_requirement"))
+        for dir in keys(flex_dir_dict)
             df = DataFrames.DataFrame()
             max_reserve_vals = []
-            for i in 1:length(regulation_dict[reg_up_key][2])÷ regulation_dict[reg_up_key][3]
+            for i in 1:length(time_stamps_DA)÷ 24
                 reserve_dict = Dict()
-                start_data_range = ((i-1)*regulation_dict[reg_up_key][3] +1)
-                data_range = range(start_data_range,length=regulation_dict[reg_up_key][3])
-                start_ts = regulation_dict[reg_up_key][2][start_data_range]
-                for (idx,val) in enumerate(regulation_dict[reg_up_key][1][reg_dir_dict[dir][1]]["values"][data_range])
+                start_data_range = ((i-1)*24 +1)
+                data_range = range(start_data_range,length=24)
+                start_ts = time_stamps_DA[start_data_range]
+                for (idx,val) in enumerate(system_DA[flex_dir_dict[dir][1]]["values"][data_range])
                     push!(reserve_dict, string(idx) => val)
                 end
                 max_reserve_val = maximum(values(reserve_dict))
@@ -359,15 +475,15 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
 
                 append!(df,reserve_dict)
             end
-            csv_path = joinpath(folder_name,reg_up_key*reg_dir_dict[dir][2])
+            csv_path = joinpath(folder_name,"DAY_AHEAD"*flex_dir_dict[dir][2])
             CSV.write(csv_path, df,writeheader = true)
 
             # Pointers Dict
             pointers_dict = Dict()
-            push!(pointers_dict,"simulation" =>reg_up_key)
-            push!(pointers_dict,"resolution" =>regulation_dict[reg_up_key][4])
+            push!(pointers_dict,"simulation" =>"DAY_AHEAD")
+            push!(pointers_dict,"resolution" =>ts_resolution_DA.value)
             push!(pointers_dict,"category" =>"Reserve")
-            push!(pointers_dict,"component_name" =>reg_dir_dict[dir][3])
+            push!(pointers_dict,"component_name" =>flex_dir_dict[dir][3])
             push!(pointers_dict,"module" =>"PowerSystems")
             push!(pointers_dict,"type" =>"SingleTimeSeries")
             push!(pointers_dict,"name" =>"requirement")
@@ -377,80 +493,21 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
             push!(pointers_dict,"data_file" =>csv_path)
 
             append!(df_ts_pointer,pointers_dict)
-            if (reg_up_key =="DAY_AHEAD")
-                # Reserves Metadata Dict
-                reserves_metadata_dict = Dict()
-                push!(reserves_metadata_dict, "Reserve Product"=>reg_dir_dict[dir][3])
-                push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
-                push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-                push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
-                push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-                push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-                push!(reserves_metadata_dict, "Direction"=>dir)
 
-                append!(df_reserves_metadata,reserves_metadata_dict)
-            end
+            # Reserves Metadata Dict
+            reserves_metadata_dict = Dict()
+            push!(reserves_metadata_dict, "Reserve Product"=>flex_dir_dict[dir][3])
+            push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
+            push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
+            push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
+            push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
+            push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
+            push!(reserves_metadata_dict, "Direction"=>dir)
+
+            append!(df_reserves_metadata,reserves_metadata_dict)
         end
-    end
-
-    # Flexible Ramp Up & Down
-    # Not available for RT System (must be handled)
-    # Up
-    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), 
-                          ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
-
-    for dir in keys(flex_dir_dict)
-        df = DataFrames.DataFrame()
-        max_reserve_vals = []
-        for i in 1:length(time_stamps_DA)÷ 24
-            reserve_dict = Dict()
-            start_data_range = ((i-1)*24 +1)
-            data_range = range(start_data_range,length=24)
-            start_ts = time_stamps_DA[start_data_range]
-            for (idx,val) in enumerate(system_DA[flex_dir_dict[dir][1]]["values"][data_range])
-                push!(reserve_dict, string(idx) => val)
-            end
-            max_reserve_val = maximum(values(reserve_dict))
-            push!(max_reserve_vals,max_reserve_val)
-            year_value = Dates.Year(start_ts).value
-            month_value = Dates.Month(start_ts).value
-            day_value = Dates.Day(start_ts).value
-            push!(reserve_dict,"Year" =>year_value)
-            push!(reserve_dict,"Month" => month_value)
-            push!(reserve_dict,"Day" =>day_value)
-
-            append!(df,reserve_dict)
-        end
-        csv_path = joinpath(folder_name,"DAY_AHEAD"*flex_dir_dict[dir][2])
-        CSV.write(csv_path, df,writeheader = true)
-
-        # Pointers Dict
-        pointers_dict = Dict()
-        push!(pointers_dict,"simulation" =>"DAY_AHEAD")
-        push!(pointers_dict,"resolution" =>ts_resolution_DA.value)
-        push!(pointers_dict,"category" =>"Reserve")
-        push!(pointers_dict,"component_name" =>flex_dir_dict[dir][3])
-        push!(pointers_dict,"module" =>"PowerSystems")
-        push!(pointers_dict,"type" =>"SingleTimeSeries")
-        push!(pointers_dict,"name" =>"requirement")
-        push!(pointers_dict,"scaling_factor_multiplier" =>"get_requirement")
-        push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
-        push!(pointers_dict,"normalization_factor" =>maximum(max_reserve_vals))
-        push!(pointers_dict,"data_file" =>csv_path)
-
-        append!(df_ts_pointer,pointers_dict)
-
-        # Reserves Metadata Dict
-        reserves_metadata_dict = Dict()
-        push!(reserves_metadata_dict, "Reserve Product"=>flex_dir_dict[dir][3])
-        push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
-        push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
-        push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
-        push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
-        push!(reserves_metadata_dict, "Eligible Device SubCategories"=>gen_fuel_unit_types)
-        push!(reserves_metadata_dict, "Direction"=>dir)
-
-        append!(df_reserves_metadata,reserves_metadata_dict)
+    else
+        @warn "No flexible requirements avaiable in EGRET JSON."
     end
 
     # Generator
@@ -469,16 +526,16 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
         for gen_key in keys(gen_components_DA)
             gen_unit_type = get(gen_components_DA[gen_key],"unit_type","None")
 
-            if (gen_unit_type == "HYDRO")
+            if (gen_unit_type == "HYDRO" || gen_unit_type == "PrimarySource.HYDRO")
                 push!(hydro_components_DA,gen_key => gen_components_DA[gen_key])
             end
-            if (gen_unit_type == "PV")
+            if (gen_unit_type == "PV" || gen_unit_type == "PrimarySource.SOLAR")
                 push!(pv_components_DA,gen_key => gen_components_DA[gen_key])
             end
             if (gen_unit_type == "RTPV")
                 push!(rtpv_components_DA,gen_key => gen_components_DA[gen_key])
             end
-            if (gen_unit_type == "WIND")
+            if (gen_unit_type == "WIND" || gen_unit_type ==  "PrimarySource.WIND")
                 push!(wind_components_DA,gen_key => gen_components_DA[gen_key])
             end
         end
@@ -486,16 +543,16 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
             for gen_key in keys(gen_components_RT)
                 gen_unit_type = get(gen_components_RT[gen_key],"unit_type","None")
 
-                if (gen_unit_type == "HYDRO")
+                if (gen_unit_type == "HYDRO" || gen_unit_type == "PrimarySource.HYDRO")
                     push!(hydro_components_RT,gen_key => gen_components_RT[gen_key])
                 end
-                if (gen_unit_type == "PV")
+                if (gen_unit_type == "PV" || gen_unit_type == "PrimarySource.SOLAR")
                     push!(pv_components_RT,gen_key => gen_components_RT[gen_key])
                 end
                 if (gen_unit_type == "RTPV")
                     push!(rtpv_components_RT,gen_key => gen_components_RT[gen_key])
                 end
-                if (gen_unit_type == "WIND")
+                if (gen_unit_type == "WIND" || gen_unit_type ==  "PrimarySource.WIND")
                     push!(wind_components_RT,gen_key => gen_components_RT[gen_key])
                 end
             end
@@ -505,8 +562,7 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
                              ("RTPV", (rtpv_components_DA,rtpv_components_RT)),("WIND", (wind_components_DA,wind_components_RT))]);
     
         for u_t_key in keys(gen_unit_dict) # in.(keys(gen_unit_dict), Ref(get.(values(gen_components),"unit_type","None")))
-            u_t_avail = in(u_t_key, get.(values(gen_components_DA),"unit_type","None"))
-            if (u_t_avail)
+            if (length(gen_unit_dict[u_t_key][1]) > 0)
                 folder_name = joinpath(ts_dir_name,u_t_key)
                 mkpath(folder_name)
                 if (length(gen_unit_dict[u_t_key][2]) > 0)
@@ -537,7 +593,7 @@ function time_series_processing(dir_name::String,areas_DA::DICT,system_DA::DICT;
                 sum_area_load = sum(filtered_area_load_vals)
                 push!(reg_load_max_vals, maximum(sum_area_load))
 
-                df[!,key] = sum_area_load
+                df[!,string(key)] = sum_area_load
             end
             
             # Export CSV
@@ -607,6 +663,13 @@ end
 # Note: Load MW and Load MVAR assigned as max of the time series data.
 #####################################################################################
 function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::String;shunt::Union{Nothing, Dict{String, Any}} = nothing) where {DICT <: Dict}
+
+    if ~(all(haskey.(values(components), "id")))
+        for (bus_key, bus) in components
+            bus["id"] = filter(x -> isdigit(x),bus_key)
+        end
+    end
+
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
@@ -635,14 +698,32 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
 
     # Parse loads
     ts_flag = 0
-    load_dicts = get.(Ref(loads),comp_names,0)
+    #load_dicts = get.(Ref(loads),comp_names,0)
+    load_dicts = []
+    for name in comp_names
+        load_bus_idx = findfirst(get.(values(loads),"bus","None") .== name)
+        if isnothing(load_bus_idx)
+            push!(load_dicts,0)
+        else
+            push!(load_dicts,collect(values(loads))[load_bus_idx])
+        end
+    end
+
+    q_flag = true
+    if  (~all(haskey.(values(loads),"q_load")))
+        q_flag = false
+    end
     mw_load_vals = []
     mvar_load_vals = []
 
     for load_dict in load_dicts
         if (load_dict != 0)
             push!(mw_load_vals, maximum(get(get(load_dict,"p_load","None"),"values","None")))
-            push!(mvar_load_vals, maximum(get(get(load_dict,"q_load","None"),"values","None")))
+            if (q_flag)
+                push!(mvar_load_vals, maximum(get(get(load_dict,"q_load","None"),"values","None")))
+            else
+                push!(mvar_load_vals, 0)
+            end
             ts_flag +=1
         else
             push!(mw_load_vals, 0)
@@ -763,7 +844,12 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_
     push!(comp_dict,"initial_p_output" =>gen_initial_p)
 
     # Include Generator Category
-    gen_categories = get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"unit_type","None")
+    gen_categories = 
+    if  (~all(haskey.(comp_dict_values,"unit_type")))
+        get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"generator_type","None")
+    else
+        get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"unit_type","None")
+    end
     push!(comp_dict,"category" => gen_categories)
 
     # Replace bus names with Bus IDs using mapping dict
@@ -775,9 +861,16 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_
     gen_ts_flag = parse_p_minmax!(comp_dict_values,comp_dict)
     
     # Parse fuel_dict
+    fuel_dict_key = "p_fuel"
     fuel_dicts = get.(comp_dict_values,"p_fuel","None");
+
+    if (all(fuel_dicts .== "None"))
+        fuel_dicts = get.(comp_dict_values,"p_cost","None");
+        fuel_dict_key = "p_cost"
+    end
+
     num_data_points = maximum([length(fuel_dict["values"]) for fuel_dict in fuel_dicts if fuel_dict !="None"])
-    parse_fuel_dict!(comp_dict_values,comp_dict,num_data_points)
+    parse_fuel_dict!(comp_dict_values,comp_dict,num_data_points, fuel_dict_key)
     
     # Parse startupfuel_dict
     parse_startup_fuel_dict!(comp_dict_values,comp_dict)
@@ -858,34 +951,71 @@ function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT}
     if (load_ts_flag && gen_ts_flag)
         if (EGRET_json_RT !== nothing)
             @info "Parsing time series of loads and generators and generating time series metadata for DA and RT Systems..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                   gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict,
-                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"],
-                                   gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                    gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict,
+                                    areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"],
+                                    gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
+                                       loads_DA = EGRET_json_DA["elements"]["load"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
+                                       area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],
+                                       loads_RT = EGRET_json_RT["elements"]["load"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            end
         else
             @info "Parsing time series of loads and generators and generating time series metadata for DA System..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                   gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
+                loads_DA = EGRET_json_DA["elements"]["load"],gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
+            end
+           
         end
     elseif load_ts_flag
         if (EGRET_json_RT !== nothing)
             @info "Parsing time series of loads and generating time series metadata for DA and RT Systems..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],
                                    system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
+                                       loads_DA = EGRET_json_DA["elements"]["load"],area_bus_mapping_dict=area_mapping_dict,
+                                       areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
+            end   
         else
             @info "Parsing time series of loads and generating time series metadata for DA System..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
                                    area_bus_mapping_dict=area_mapping_dict)
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
+                                   area_bus_mapping_dict=area_mapping_dict)
+            end
+            
         end
     elseif gen_ts_flag
         if (EGRET_json_RT !== nothing)
             @info "Parsing time series of generators and generating time series metadata for DA and RT Systems..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
-                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
+                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],
+                                   gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
+                                       gen_components_DA=EGRET_json_DA["elements"]["generator"],areas_RT = EGRET_json_RT["elements"]["area"],
+                                       system_RT=EGRET_json_RT["system"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
+            end
         else
             @info "Parsing time series of generators and generating time series metadata for DA System..."
-            time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"])
+            if (haskey(EGRET_json_DA["elements"], "area"))
+                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"])
+            else
+                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
+                                       gen_components_DA=EGRET_json_DA["elements"]["generator"])
+            end
         end
     else
         @warn "No generator and load time series data available in the EGRET DA JSON"
