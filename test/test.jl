@@ -60,3 +60,4 @@ sys_DA = EGRET2Sienna.egret_to_sienna(EGRET_json_DA,ts_pointers_file="CSV", seri
 
 
 sys_DA = EGRET2Sienna.egret_to_sienna("/Users/sdhulipa/Old Mac Backup/Desktop/OneDrive-Backup/NREL-Github/EGRET2SIIP/test/2020-01-27.json",export_location = "/Users/sdhulipa/Old Mac Backup/Desktop/Misc./temp/EGRET2SIIP-Test")
+sys_DA = EGRET2Sienna.egret_to_sienna("/Users/sdhulipa/Old Mac Backup/Desktop/OneDrive-Backup/NREL-Github/EGRET2SIIP/test/DAY_AHEAD_Model_2020-07-01_2020-07-14.json",export_location = "/Users/sdhulipa/Old Mac Backup/Desktop/Misc./temp/EGRET2SIIP-Test")

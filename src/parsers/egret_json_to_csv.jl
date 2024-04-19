@@ -9,6 +9,35 @@
 # Convert DataFrames.DataFrame to JSON
 # Convert timeseries_pointers.csv to timeseries_pointers.JSON
 #####################################################################################
+# Fuel Mapping
+#####################################################################################
+fuel_mapping = Dict(
+    "Coal" => "Coal",
+    "Hydro" => "Hydro",
+    "NG" => "NG",
+    "Nuclear" => "Nuclear",
+    "Oil" => "Oil",
+    "Solar" => "Solar",
+    "Wind" => "Wind",
+    "Sync_Cond" => "Sync_Cond",
+    "PrimarySource.HYDRO" => "Hydro",
+    "PrimarySource.COAL" => "Coal",
+    "PrimarySource.GAS" => "NG",
+    "PrimarySource.SOLAR" => "Solar",
+    "PrimarySource.NUCLEAR" => "Nuclear",
+    "PrimarySource.OIL" => "Oil",
+    "PrimarySource.WIND" => "Wind"
+)
+fuel_pm_mapping = Dict(
+    "PrimarySource.HYDRO" => "HYDRO",
+    "PrimarySource.COAL" => "STEAM",
+    "PrimarySource.GAS" => "CC",
+    "PrimarySource.SOLAR" => "PV",
+    "PrimarySource.NUCLEAR" => "NUCLEAR",
+    "PrimarySource.OIL" => "CT",
+    "PrimarySource.WIND" => "WIND"
+)
+#####################################################################################
 function df_to_json(df::DataFrames.DataFrame,dir_name::String)
     df[!,"normalization_factor"] .= "max"
     pointers_dict = []
@@ -281,6 +310,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     df_simulation_objects = DataFrames.DataFrame()
 
     #Reserves
+    reserve_types_DA = String[] # Reserve Products to generate simulation_objects
     #**TODO - This currently assumes every EGRET JSON passed has all the reserve products RTS_GMLC has. There is an easy fix for this.
     gen_fuel_unit_types = 
     if  (~all(haskey.(values(gen_components_DA),"unit_type")))
@@ -304,9 +334,9 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     
     all_areas_DA =
     if (areas_DA isa Vector{String})
-        "("*join(collect(keys(areas_DA)),",")*")"
-    else
         "("*join(areas_DA,",")*")"
+    else
+        "("*join(collect(keys(areas_DA)),",")*")"
     end
    
     # Spinning Reserves
@@ -371,6 +401,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
                 append!(df_reserves_metadata,reserves_metadata_dict)
             end
         end
+        push!(reserve_types_DA, "Spin_Up")
     else
         @warn "No spinning reserve requirements avaiable in EGRET JSON."
     end
@@ -442,6 +473,8 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
                 end
             end
         end
+        push!(reserve_types_DA, "Reg_Up")
+        push!(reserve_types_DA, "Reg_Down")
     else
         @warn "No regulation requirements avaiable in EGRET JSON."
     end
@@ -506,6 +539,8 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
 
             append!(df_reserves_metadata,reserves_metadata_dict)
         end
+        push!(reserve_types_DA, "Flex_Up")
+        push!(reserve_types_DA, "Flex_Down")
     else
         @warn "No flexible requirements avaiable in EGRET JSON."
     end
@@ -634,7 +669,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     simulation_objects_dict = Dict()
     push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step",
                                    "Look_Ahead_Resolution","Reserve_Products"])
-    reserve_types_DA = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
+    #reserve_types_DA = ["Flex_Up", "Flex_Down", "Spin_Up", "Reg_Up", "Reg_Down"]
     reserve_types_DA = "("*join(reserve_types_DA,",")*")"
 
     reserve_types_RT = ["Spin_Up", "Reg_Up", "Reg_Down"]
@@ -749,6 +784,16 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
         push!(area_bus_mapping_dict[get(components[name],"area","None")],name)
     end
 
+     # Make a mapping Dict from Zone => Bus Name
+    zone_names = unique(get.(comp_dict_values,"zone","None"))
+    zone_bus_mapping_dict = Dict()
+    for zone_name in zone_names
+        push!(zone_bus_mapping_dict,zone_name =>String[])
+    end
+    for name in comp_names
+        push!(zone_bus_mapping_dict[get(components[name],"zone","None")],name)
+    end
+
     # Make a mapping Dict from Bus Name => Bus ID.
     bus_name_id_mapping_dict = Dict()
     for (name,id) in zip(get(comp_dict,"Name","None"),get(comp_dict,"id","None")) 
@@ -763,7 +808,7 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
     end
     
     @info "Successfully parsed buses in the JSON."
-    return bus_name_id_mapping_dict,area_bus_mapping_dict,flag
+    return bus_name_id_mapping_dict,area_bus_mapping_dict, zone_bus_mapping_dict,flag
 end
 #####################################################################################
 # Functions to parse EGRET Branch
@@ -816,13 +861,26 @@ end
 # **Note EGRET doesn't handle CSP units. SO, if there are any CSP units in the root dataset,
 # they will not show up in the converted PSY System!
 #####################################################################################
-function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_name::String) where {DICT <: Dict}
+function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area_mapping_dict, zone_mapping_dict,
+                               dir_name::String, baseMVA) where {DICT <: Dict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
-    comp_dict_values = values(components)
 
-    for comp_field in keys(first(comp_dict_values))
+    if  (~all(haskey.(values(components),"unit_type")))
+        for (comp_name, comp_fields) in components
+            comp_fields["unit_type"] = fuel_pm_mapping[comp_fields["fuel"]]
+        end
+    end
+
+    # Fix "fuel" and "unit_type" keys
+    for (comp_name, comp_fields) in components
+        comp_fields["fuel"] = fuel_mapping[comp_fields["fuel"]]
+    end
+
+    comp_dict_values = values(components)
+    comp_key_idx = findmax(length.(keys.(comp_dict_values)))[2]
+    for comp_field in keys(collect(comp_dict_values)[comp_key_idx])
 
         if(comp_field in ["agc_capable","area","bus","fuel","generator_type","in_service","mbase","ramp_q","unit_type","zone"]) # These should return 'nothing' if not available
             push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
@@ -844,12 +902,8 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_
     push!(comp_dict,"initial_p_output" =>gen_initial_p)
 
     # Include Generator Category
-    gen_categories = 
-    if  (~all(haskey.(comp_dict_values,"unit_type")))
-        get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"generator_type","None")
-    else
-        get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"unit_type","None")
-    end
+    gen_categories = get.(comp_dict_values,"fuel","None").*" ".*get.(comp_dict_values,"unit_type","None")
+
     push!(comp_dict,"category" => gen_categories)
 
     # Replace bus names with Bus IDs using mapping dict
@@ -875,6 +929,51 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},dir_
     # Parse startupfuel_dict
     parse_startup_fuel_dict!(comp_dict_values,comp_dict)
 
+    # Handle if fuel_cost isn't avaialable - "fuel_cost"
+    fuel_cost_vals = Float64[]
+    if ~(haskey(comp_dict, "fuel_cost"))
+        for val in comp_dict["HR_avg_0"]
+            if ~(iszero(val))
+                push!(fuel_cost_vals, 1.0)
+            else
+                push!(fuel_cost_vals, 0.0)
+            end
+        end
+        push!(comp_dict, "fuel_cost" => fuel_cost_vals)
+    end
+
+    # Handle if "area", "zone", "pg" and "qg" aren't avaialable
+    if ~(haskey(comp_dict, "pg"))
+        push!(comp_dict, "pg" => comp_dict["p_max"])
+    end
+    if ~(haskey(comp_dict, "qg"))
+        push!(comp_dict, "qg" => zeros(Float64,length(comp_dict["p_max"])))
+    end
+
+    if ~(haskey(comp_dict, "area"))
+        gen_areas = []
+        gen_zones = []
+
+        for gen_bus in get.(comp_dict_values,"bus","None")
+            for (area, area_members) in area_mapping_dict
+                if (gen_bus in area_members)
+                    push!(gen_areas, area)
+                end
+            end
+
+            for (zone, zone_members) in zone_mapping_dict
+                if (gen_bus in zone_members)
+                    push!(gen_zones, zone)
+                end
+            end
+        end
+        push!(comp_dict, "area" => gen_areas)
+        push!(comp_dict, "zone" => gen_zones)
+    end
+    if ~(haskey(comp_dict, "mbase"))
+        push!(comp_dict, "mbase" => fill(baseMVA,length(comp_dict["p_max"])))
+    end
+    
     df = DataFrames.DataFrame(comp_dict)
     
     # Export CSV
@@ -917,7 +1016,7 @@ function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT}
     
     # Parsing different elements in EGRET System
     # Bus
-    bus_mapping_dict, area_mapping_dict, load_ts_flag = 
+    bus_mapping_dict, area_mapping_dict, zone_mapping_dict, load_ts_flag = 
     if haskey(EGRET_json_DA["elements"], "bus")
         @info "Parsing buses in EGRET JSON..."
         if (haskey(EGRET_json_DA["elements"], "shunt"))
@@ -941,7 +1040,8 @@ function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT}
     gen_ts_flag = 
     if haskey(EGRET_json_DA["elements"], "generator")
         @info "Parsing generators in EGRET JSON..."
-        parse_EGRET_generator(EGRET_json_DA["elements"]["generator"],bus_mapping_dict,dir_name)
+        parse_EGRET_generator(EGRET_json_DA["elements"]["generator"],bus_mapping_dict,area_mapping_dict, zone_mapping_dict,dir_name,
+                              EGRET_json_DA["system"]["baseMVA"])
     else
         error("No generators in the EGRET DA System JSON")
     end
