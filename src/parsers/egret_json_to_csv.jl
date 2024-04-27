@@ -697,7 +697,7 @@ end
 # Functions to parse EGRET Bus
 # Note: Load MW and Load MVAR assigned as max of the time series data.
 #####################################################################################
-function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::String;shunt::Union{Nothing, Dict{String, Any}} = nothing) where {DICT <: Dict}
+function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::String, elements;shunt::Union{Nothing, Dict{String, Any}} = nothing) where {DICT <: Dict}
 
     if ~(all(haskey.(values(components), "id")))
         for (bus_key, bus) in components
@@ -767,6 +767,33 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
     end 
     push!(comp_dict,"MW Load" => mw_load_vals) 
     push!(comp_dict,"MVAR Load" => mvar_load_vals) 
+
+    if ~(haskey(comp_dict,"matpower_bustype"))
+        buses = elements["bus"]
+        gens = elements["generator"]
+        loads = elements["load"]
+        bus_types = String[]
+        for (bus_num, bus) in buses
+            load_bus_idx = findfirst(get.(values(loads),"bus","None") .== bus_num)
+            gen_bus_idx = findfirst(get.(values(gens),"bus","None") .== bus_num)
+
+            if (bus_num == first(keys(buses)))
+                push!(bus_types, "ref")
+            else
+                if (isnothing(load_bus_idx) && isnothing(gen_bus_idx))
+                    push!(bus_types, "PQ")
+                elseif (~isnothing(load_bus_idx) && isnothing(gen_bus_idx))
+                    push!(bus_types, "PV")
+                elseif (isnothing(load_bus_idx) && ~isnothing(gen_bus_idx))
+                    push!(bus_types, "PQ")
+                else
+                    push!(bus_types, "PQ")
+                end
+            end
+        end
+        push!(comp_dict, "matpower_bustype" => bus_types)
+
+    end
 
     df = DataFrames.DataFrame(comp_dict)
     
@@ -1020,9 +1047,9 @@ function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT}
     if haskey(EGRET_json_DA["elements"], "bus")
         @info "Parsing buses in EGRET JSON..."
         if (haskey(EGRET_json_DA["elements"], "shunt"))
-            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name,shunt = EGRET_json_DA["elements"]["shunt"])
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name,EGRET_json_DA["elements"],shunt = EGRET_json_DA["elements"]["shunt"])
         else
-            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name)
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name, EGRET_json_DA["elements"])
         end
     else
         error("No buses in the EGRET DA System JSON")
