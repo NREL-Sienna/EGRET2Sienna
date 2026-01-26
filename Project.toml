@@ -12,7 +12,7 @@ PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 
 [compat]
 CSV = "~0.10"
-DataFrames = "~1.6"
-JSON = "~0.21"
-PowerSystems = "~3.0"
+DataFrames = "~1.8"
+JSON = "~1.2"
+PowerSystems = "^5.0"
 julia = "^1.8"
