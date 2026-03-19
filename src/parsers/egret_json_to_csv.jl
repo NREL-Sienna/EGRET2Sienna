@@ -35,7 +35,15 @@ fuel_pm_mapping = Dict(
     "PrimarySource.SOLAR" => "PV",
     "PrimarySource.NUCLEAR" => "NUCLEAR",
     "PrimarySource.OIL" => "CT",
-    "PrimarySource.WIND" => "WIND"
+    "PrimarySource.WIND" => "WIND",
+    "Coal" => "STEAM",
+    "Hydro" => "HYDRO",
+    "NG" => "CC",
+    "Nuclear" => "NUCLEAR",
+    "Oil" => "CT",
+    "Solar" => "PV",
+    "Wind" => "WIND",
+    "Sync_Cond" => "SYNC_COND"
 )
 #####################################################################################
 function df_to_json(df::DataFrames.DataFrame,dir_name::String)
@@ -44,22 +52,74 @@ function df_to_json(df::DataFrames.DataFrame,dir_name::String)
     for row in eachrow(df)
         push!(pointers_dict,Dict(fn=>get(row, fn,nothing) for fn ∈ DataFrames.names(df)))
     end
-    
+
     ts_json_location = joinpath(dir_name,"timeseries_pointers.json")
-    
+
     open(ts_json_location,"w") do f
         JSON.print(f, pointers_dict, 4)
     end
 end
-# Check if a file passed is JSON file
-isjson = endswith(".json");
+# Resolve a generator bus field to a single bus name string.
+# Handles plain string buses and distributed_bus objects (picks highest participation factor bus).
+function _resolve_bus(bus_field)
+    if bus_field isa AbstractString
+        return bus_field
+    elseif bus_field isa AbstractDict
+        values_dict = get(bus_field, "values", nothing)
+        if values_dict isa AbstractDict && !isempty(values_dict)
+            return string(argmax(Dict(k => Float64(v) for (k, v) in values_dict)))
+        end
+    end
+    return nothing
+end
+# Resolve a fuel string against a mapping dict, using prefix matching as a fallback.
+# Adds newly resolved entries to the dict so future lookups are O(1).
+function _resolve_fuel!(mapping::Dict{String,String}, fuel::String, default::String)
+    haskey(mapping, fuel) && return mapping[fuel]
+    for sep in ('_', ' ')
+        prefix = split(fuel, sep; limit=2)[1]
+        if prefix != fuel && haskey(mapping, prefix)
+            @info "Mapping unknown fuel \"$fuel\" → \"$(mapping[prefix])\" via prefix \"$prefix\"."
+            mapping[fuel] = mapping[prefix]
+            return mapping[fuel]
+        end
+    end
+    @warn "Could not resolve fuel \"$fuel\"; using default \"$default\"."
+    mapping[fuel] = default
+    return default
+end
+# Extract maximum load value from a p_load/q_load field that is either
+# a scalar Number or a {"values": [...]} time-series dict.
+function _load_max(load_dict::AbstractDict, key::String)
+    val = get(load_dict, key, nothing)
+    if val isa Number
+        return Float64(val)
+    elseif val isa AbstractDict
+        return maximum(get(val, "values", [0.0]))
+    else
+        return 0.0
+    end
+end
+
+# Check if a file passed is JSON file (plain or gzipped)
+isjson(path::String) = endswith(path, ".json") || endswith(path, ".json.gz")
+# Parse a JSON file, handling both plain .json and gzipped .json.gz
+function parse_json_file(path::String)
+    if endswith(path, ".json.gz")
+        GZip.open(path, "r") do io
+            JSON.parse(String(read(io)))
+        end
+    else
+        JSON.parsefile(path)
+    end
+end
 # Helper Functions
 # Function to get p_max and p_min of Generator
-# p_max and p_min for Hydro and Renewable. For these types, p_max is a 
+# p_max and p_min for Hydro and Renewable. For these types, p_max is a
 # time series and not an Int64. Currently, assigning max of time series values
 # as for these types of Generator
 #####################################################################################
-function parse_p_minmax!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: Dict}
+function parse_p_minmax!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: AbstractDict}
     p_max_values = []
     p_min_values = []
     ts_flag = 0
@@ -80,7 +140,7 @@ function parse_p_minmax!(comp_values::Base.ValueIterator, comp_dict::DICT) where
                 push!(p_min_values,maximum(get(p_min_val ,"values","None")))
             else
                 push!(p_min_values,0)
-            end 
+            end
         end
     end
 
@@ -105,7 +165,7 @@ end
 # f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
 # Others: float(row[f'HR_incr_{i}'] = ((f[i] - f[i-1])/(x[i] - x[i-1]))*1000
 #####################################################################################
-function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_data_points::Int64, fuel_dict_key::String) where {DICT <: Dict}
+function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_data_points::Int64, fuel_dict_key::String) where {DICT <: AbstractDict}
     for i in 1:num_data_points
         push!(comp_dict,"output_pct_$(i-1)" =>[])
         push!(comp_dict,"HR_avg_$(i-1)" =>[])
@@ -122,7 +182,7 @@ function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_d
                     else
                         HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i-1][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
                         push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
-                    end  
+                    end
                 end
                 for i in 1+length(fuel_dict["values"]):num_data_points
                     push!(comp_dict["output_pct_$(i-1)"],0)
@@ -137,9 +197,9 @@ function parse_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT,num_d
                     else
                         HR_temp= ((fuel_dict["values"][i][2] - fuel_dict["values"][i-1][2])/(fuel_dict["values"][i][1] - fuel_dict["values"][i-1][1]))*1000
                         push!(comp_dict["HR_avg_$(i-1)"],HR_temp)
-                    end  
+                    end
                 end
-            end 
+            end
         else
             for i in 1:num_data_points
                 push!(comp_dict["output_pct_$(i-1)"],0)
@@ -160,7 +220,7 @@ startup_time = (float(row['Start Time Hot Hr']),
                 float(row['Start Time Cold Hr']))
 =#
 #####################################################################################
-function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: Dict}
+function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DICT) where {DICT <: AbstractDict}
     startup_fuel_dict_key = "startup_fuel"
     if (all(get.(comp_values,startup_fuel_dict_key,"None") .== "None"))
         startup_fuel_dict_key = "startup_cost"
@@ -175,7 +235,7 @@ function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DI
     push!(comp_dict,"Start Time Hot Hr" =>[])
     push!(comp_dict,"Start Time Warm Hr" =>[])
     push!(comp_dict,"Start Time Cold Hr" =>[])
-   
+
     for startup_dict in get.(comp_values,startup_fuel_dict_key,"None")
         if (startup_dict != "None")
             for i in 1:3
@@ -195,7 +255,7 @@ function parse_startup_fuel_dict!(comp_values::Base.ValueIterator, comp_dict::DI
             for i in 1:3
                 push!(comp_dict[lookup_dict[i][1]],0)
                 push!(comp_dict[lookup_dict[i][2]],0)
-            end 
+            end
         end
     end
 end
@@ -245,7 +305,7 @@ function make_gen_time_series!(time_stamps_DA::Vector{Dates.DateTime},dir_name::
         push!(pointers_dict,"scaling_factor_multiplier_module" =>"PowerSystems")
         push!(pointers_dict,"normalization_factor" =>comp_p_max)
         push!(pointers_dict,"data_file" =>fill(csv_path,num_components))
-        
+
         append!(df_ts_pointer,pointers_dict)
     end
 end
@@ -257,7 +317,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
                                 loads_DA::Union{Nothing, DICT} = nothing,area_bus_mapping_dict::Union{Nothing, Dict{Any,Any}} = nothing,
                                 gen_components_DA::Union{Nothing, DICT} = nothing,areas_RT::Union{Nothing, DICT} = nothing,
                                 system_RT::Union{Nothing, DICT} = nothing,loads_RT::Union{Nothing, DICT} = nothing,
-                                gen_components_RT::Union{Nothing, DICT} = nothing) where {DICT <: Dict}
+                                gen_components_RT::Union{Nothing, DICT} = nothing) where {DICT <: AbstractDict}
     #Time stamp processing
     # Day-Ahead
     rt_flag = false
@@ -277,7 +337,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     end
 
     date_format = Dates.DateFormat("Y-m-d H:M")
-    time_stamps_DA = 
+    time_stamps_DA =
     try
         Dates.DateTime.(system_DA["time_keys"],date_format)
     catch
@@ -293,7 +353,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     end
 
     # Make time series data folder
-    
+
     ts_dir_name = joinpath(dir_name,"timeseries_data_files")
 
     if (~isdir(ts_dir_name))
@@ -305,19 +365,19 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
 
     # Reserves Metadata CSV
     df_reserves_metadata = DataFrames.DataFrame()
-    
+
     # Reserves Metadata CSV
     df_simulation_objects = DataFrames.DataFrame()
 
     #Reserves
     reserve_types_DA = String[] # Reserve Products to generate simulation_objects
     #**TODO - This currently assumes every EGRET JSON passed has all the reserve products RTS_GMLC has. There is an easy fix for this.
-    gen_fuel_unit_types = 
+    gen_fuel_unit_types =
     if  (~all(haskey.(values(gen_components_DA),"unit_type")))
-        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"generator_type","None")) 
+        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"generator_type","None"))
         if ~(u_t in ["PrimarySource.NUCLEAR thermal"])]
     else
-        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None")) 
+        [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None"))
         if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV"])]
     end
 
@@ -327,18 +387,18 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
         end
     end
     #=
-    gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None")) 
+    gen_fuel_unit_types = [u_t for u_t in unique(get.(values(gen_components_DA),"fuel","None").*" ".*get.(values(gen_components_DA),"unit_type","None"))
                                 if ~(u_t in ["Sync_Cond SYNC_COND","Nuclear NUCLEAR", "Solar RTPV", "PrimarySource.NUCLEAR PrimarySource.NUCLEAR"])]
     =#
     gen_fuel_unit_types = "("*join(gen_fuel_unit_types,",")*")"
-    
+
     all_areas_DA =
     if (areas_DA isa Vector{String})
         "("*join(areas_DA,",")*")"
     else
         "("*join(collect(keys(areas_DA)),",")*")"
     end
-   
+
     # Spinning Reserves
     folder_name = joinpath(ts_dir_name,"RESERVES")
     mkpath(folder_name)
@@ -391,7 +451,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
                 reserves_metadata_dict = Dict()
 
                 push!(reserves_metadata_dict, "Reserve Product"=>object_names)
-                push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas)) 
+                push!(reserves_metadata_dict, "Timeframe (sec)"=>fill(600,num_areas))
                 push!(reserves_metadata_dict, "Requirement (MW)"=>region_max_values)
                 push!(reserves_metadata_dict, "Eligible Regions"=>collect(keys(areas_DA)))
                 push!(reserves_metadata_dict, "Eligible Device Categories"=>fill("Generator",num_areas))
@@ -409,9 +469,9 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     # Regulation Up & Down
     # Up & Down
     # Check if RT System is passed
-    reg_dir_dict = Dict([("Up", ("regulation_up_requirement","_regional_Reg_Up.csv","Reg_Up")), 
+    reg_dir_dict = Dict([("Up", ("regulation_up_requirement","_regional_Reg_Up.csv","Reg_Up")),
                          ("Down", ("regulation_down_requirement","_regional_Reg_Down.csv","Reg_Down"))]);
-    
+
     regulation_dict = Dict("DAY_AHEAD" => (system_DA,time_stamps_DA,24,ts_resolution_DA.value))
     if (system_RT !== nothing)
         push!(regulation_dict,"REAL_TIME" => (system_RT,time_stamps_RT,288,ts_resolution_RT.value))
@@ -462,7 +522,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
                     # Reserves Metadata Dict
                     reserves_metadata_dict = Dict()
                     push!(reserves_metadata_dict, "Reserve Product"=>reg_dir_dict[dir][3])
-                    push!(reserves_metadata_dict, "Timeframe (sec)"=>300) 
+                    push!(reserves_metadata_dict, "Timeframe (sec)"=>300)
                     push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
                     push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
                     push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
@@ -482,7 +542,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     # Flexible Ramp Up & Down
     # Not available for RT System (must be handled)
     # Up
-    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")), 
+    flex_dir_dict = Dict([("Up", ("flexible_ramp_up_requirement","_regional_Flex_Up.csv","Flex_Up")),
                           ("Down", ("flexible_ramp_down_requirement","_regional_Flex_Down.csv","Flex_Down"))]);
 
     if (haskey(system_DA, "flexible_ramp_up_requirement") && haskey(system_DA, "flexible_ramp_down_requirement"))
@@ -530,7 +590,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
             # Reserves Metadata Dict
             reserves_metadata_dict = Dict()
             push!(reserves_metadata_dict, "Reserve Product"=>flex_dir_dict[dir][3])
-            push!(reserves_metadata_dict, "Timeframe (sec)"=>1200) 
+            push!(reserves_metadata_dict, "Timeframe (sec)"=>1200)
             push!(reserves_metadata_dict, "Requirement (MW)"=>maximum(max_reserve_vals))
             push!(reserves_metadata_dict, "Eligible Regions"=>all_areas_DA)
             push!(reserves_metadata_dict, "Eligible Device Categories"=>"Generator")
@@ -595,7 +655,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
         # Call functions for different types of Generator
         gen_unit_dict = Dict([("HYDRO", (hydro_components_DA,hydro_components_RT)), ("PV", (pv_components_DA,pv_components_RT)),
                              ("RTPV", (rtpv_components_DA,rtpv_components_RT)),("WIND", (wind_components_DA,wind_components_RT))]);
-    
+
         for u_t_key in keys(gen_unit_dict) # in.(keys(gen_unit_dict), Ref(get.(values(gen_components),"unit_type","None")))
             if (length(gen_unit_dict[u_t_key][1]) > 0)
                 folder_name = joinpath(ts_dir_name,u_t_key)
@@ -630,7 +690,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
 
                 df[!,string(key)] = sum_area_load
             end
-            
+
             # Export CSV
             csv_path = joinpath(folder_name,load_key*"_regional_Load.csv")
             CSV.write(csv_path, df,writeheader = true)
@@ -664,7 +724,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     # Export reserves metadata CSV
     csv_path = joinpath(dir_name,"reserves.csv")
     CSV.write(csv_path, df_reserves_metadata,writeheader = true)
-    
+
     # Export simulation objects CSV
     simulation_objects_dict = Dict()
     push!(simulation_objects_dict, "Simulation_Parameters" => ["Periods_per_Step","Period_Resolution","Date_From","Date_To","Look_Ahead_Periods_per_Step",
@@ -682,7 +742,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
     end
 
     append!(df_simulation_objects,simulation_objects_dict)
-    
+
     csv_path = joinpath(dir_name,"simulation_objects.csv")
     CSV.write(csv_path, df_simulation_objects,writeheader = true)
 
@@ -697,7 +757,7 @@ end
 # Functions to parse EGRET Bus
 # Note: Load MW and Load MVAR assigned as max of the time series data.
 #####################################################################################
-function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::String, elements;shunt::Union{Nothing, Dict{String, Any}} = nothing) where {DICT <: Dict}
+function parse_EGRET_bus(components::DICT,loads::AbstractDict{String, Any},dir_name::String, elements;shunt::Union{Nothing, AbstractDict{String, Any}} = nothing) where {DICT <: AbstractDict}
 
     if ~(all(haskey.(values(components), "id")))
         for (bus_key, bus) in components
@@ -711,9 +771,9 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
     comp_dict_values = values(components)
 
     for comp_field in keys(first(comp_dict_values))
-        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,"None"))    
+        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,"None"))
     end
-    
+
     # Parse Shunt elements
     if (shunt !== nothing)
         branch_shunt_dicts = get.(Ref(shunt),comp_names,0)
@@ -724,8 +784,8 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
             else
                 push!(branch_shunt_vals, 0)
             end
-        end 
-        push!(comp_dict,"MVAR Shunt" => branch_shunt_vals) 
+        end
+        push!(comp_dict,"MVAR Shunt" => branch_shunt_vals)
     end
 
     # Include MW Shunt G column
@@ -753,20 +813,23 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
 
     for load_dict in load_dicts
         if (load_dict != 0)
-            push!(mw_load_vals, maximum(get(get(load_dict,"p_load","None"),"values","None")))
+            push!(mw_load_vals, _load_max(load_dict, "p_load"))
             if (q_flag)
-                push!(mvar_load_vals, maximum(get(get(load_dict,"q_load","None"),"values","None")))
+                push!(mvar_load_vals, _load_max(load_dict, "q_load"))
             else
                 push!(mvar_load_vals, 0)
             end
-            ts_flag +=1
+            p_load_val = get(load_dict, "p_load", nothing)
+            if p_load_val isa AbstractDict
+                ts_flag += 1
+            end
         else
             push!(mw_load_vals, 0)
             push!(mvar_load_vals, 0)
         end
-    end 
-    push!(comp_dict,"MW Load" => mw_load_vals) 
-    push!(comp_dict,"MVAR Load" => mvar_load_vals) 
+    end
+    push!(comp_dict,"MW Load" => mw_load_vals)
+    push!(comp_dict,"MVAR Load" => mvar_load_vals)
 
     if ~(haskey(comp_dict,"matpower_bustype"))
         buses = elements["bus"]
@@ -796,7 +859,7 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
     end
 
     df = DataFrames.DataFrame(comp_dict)
-    
+
     # Export CSV
     csv_path = joinpath(dir_name,"bus.csv")
     CSV.write(csv_path, df,writeheader = true,transform = (col, val) -> something(val, missing))
@@ -823,8 +886,8 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
 
     # Make a mapping Dict from Bus Name => Bus ID.
     bus_name_id_mapping_dict = Dict()
-    for (name,id) in zip(get(comp_dict,"Name","None"),get(comp_dict,"id","None")) 
-        push!(bus_name_id_mapping_dict, name => id) 
+    for (name,id) in zip(get(comp_dict,"Name","None"),get(comp_dict,"id","None"))
+        push!(bus_name_id_mapping_dict, name => id)
     end
     # Time series availability
     flag = false
@@ -833,7 +896,7 @@ function parse_EGRET_bus(components::DICT,loads::Dict{String, Any},dir_name::Str
     else
         flag = false
     end
-    
+
     @info "Successfully parsed buses in the JSON."
     return bus_name_id_mapping_dict,area_bus_mapping_dict, zone_bus_mapping_dict,flag
 end
@@ -841,14 +904,14 @@ end
 # Functions to parse EGRET Branch
 # Add IDs for from and to and check with original source data
 #####################################################################################
-function parse_EGRET_branch(components::DICT,mapping_dict::Dict{Any,Any},dir_name::String) where {DICT <: Dict}
+function parse_EGRET_branch(components::DICT,mapping_dict::Dict{Any,Any},dir_name::String) where {DICT <: AbstractDict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
     comp_dict_values = values(components)
 
     for comp_field in keys(first(comp_dict_values))
-        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,"None"))    
+        push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,"None"))
     end
 
     # Replace bus names with Bus IDs using mapping dict
@@ -876,7 +939,7 @@ function parse_EGRET_branch(components::DICT,mapping_dict::Dict{Any,Any},dir_nam
     push!(comp_dict,"Tr Ratio" => Tr_Ratio_vals)
 
     df = DataFrames.DataFrame(comp_dict)
-    
+
     # Export CSV
     csv_path = joinpath(dir_name,"branch.csv")
     CSV.write(csv_path, df,writeheader = true,transform = (col, val) -> something(val, missing))
@@ -889,20 +952,26 @@ end
 # they will not show up in the converted PSY System!
 #####################################################################################
 function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area_mapping_dict, zone_mapping_dict,
-                               dir_name::String, baseMVA) where {DICT <: Dict}
+                               dir_name::String, baseMVA) where {DICT <: AbstractDict}
     comp_dict = Dict()
     comp_names = collect(keys(components))
     push!(comp_dict, "Name" => comp_names)
 
     if  (~all(haskey.(values(components),"unit_type")))
         for (comp_name, comp_fields) in components
-            comp_fields["unit_type"] = fuel_pm_mapping[comp_fields["fuel"]]
+            fuel = get(comp_fields, "fuel", nothing)
+            if fuel !== nothing
+                comp_fields["unit_type"] = _resolve_fuel!(fuel_pm_mapping, fuel, "THERMAL")
+            end
         end
     end
 
     # Fix "fuel" and "unit_type" keys
     for (comp_name, comp_fields) in components
-        comp_fields["fuel"] = fuel_mapping[comp_fields["fuel"]]
+        fuel = get(comp_fields, "fuel", nothing)
+        if fuel !== nothing
+            comp_fields["fuel"] = _resolve_fuel!(fuel_mapping, fuel, fuel)
+        end
     end
 
     comp_dict_values = values(components)
@@ -912,7 +981,7 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
         if(comp_field in ["agc_capable","area","bus","fuel","generator_type","in_service","mbase","ramp_q","unit_type","zone"]) # These should return 'nothing' if not available
             push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,nothing))
         end
-    
+
         if(comp_field in ["fuel_cost", "initial_p_output","initial_q_output","initial_status","min_down_time","min_up_time", "non_fuel_startup_cost","p_max_agc","p_min_agc",
                          "pg", "qg","ramp_agc","ramp_down_60min","ramp_up_60min","shutdown_capacity","shutdown_cost","startup_capacity"]) # These should return '0' if not available
             push!(comp_dict, comp_field => get.(comp_dict_values,comp_field,0))
@@ -923,7 +992,7 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
     comp_dict["initial_status"] = floor.(Int64,abs.(comp_dict["initial_status"]))
     gen_initial_p = Bool[]
     for p in comp_dict["initial_p_output"]
-        p>0 ? push!(gen_initial_p,true) : push!(gen_initial_p,false) 
+        p>0 ? push!(gen_initial_p,true) : push!(gen_initial_p,false)
     end
     delete!(comp_dict,"initial_p_output")
     push!(comp_dict,"initial_p_output" =>gen_initial_p)
@@ -934,13 +1003,15 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
     push!(comp_dict,"category" => gen_categories)
 
     # Replace bus names with Bus IDs using mapping dict
-    bus_ids = getindex.(Ref(mapping_dict),comp_dict["bus"])
+    # Resolve distributed_bus objects to a single bus name first
+    resolved_buses = _resolve_bus.(comp_dict["bus"])
+    bus_ids = getindex.(Ref(mapping_dict), resolved_buses)
     delete!(comp_dict,"bus")
     push!(comp_dict,"bus" => bus_ids)
 
     # Parse p_max and p_min
     gen_ts_flag = parse_p_minmax!(comp_dict_values,comp_dict)
-    
+
     # Parse fuel_dict
     fuel_dict_key = "p_fuel"
     fuel_dicts = get.(comp_dict_values,"p_fuel","None");
@@ -952,7 +1023,7 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
 
     num_data_points = maximum([length(fuel_dict["values"]) for fuel_dict in fuel_dicts if fuel_dict !="None"])
     parse_fuel_dict!(comp_dict_values,comp_dict,num_data_points, fuel_dict_key)
-    
+
     # Parse startupfuel_dict
     parse_startup_fuel_dict!(comp_dict_values,comp_dict)
 
@@ -978,21 +1049,29 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
     end
 
     if ~(haskey(comp_dict, "area"))
-        gen_areas = []
-        gen_zones = []
+        gen_buses = _resolve_bus.(get.(comp_dict_values, "bus", nothing))
+        gen_areas = Union{String,Nothing}[]
+        gen_zones = Union{String,Nothing}[]
 
-        for gen_bus in get.(comp_dict_values,"bus","None")
-            for (area, area_members) in area_mapping_dict
-                if (gen_bus in area_members)
-                    push!(gen_areas, area)
+        for gen_bus in gen_buses
+            found_area = nothing
+            found_zone = nothing
+            if gen_bus !== nothing
+                for (area, area_members) in area_mapping_dict
+                    if gen_bus in area_members
+                        found_area = area
+                        break
+                    end
+                end
+                for (zone, zone_members) in zone_mapping_dict
+                    if gen_bus in zone_members
+                        found_zone = zone
+                        break
+                    end
                 end
             end
-
-            for (zone, zone_members) in zone_mapping_dict
-                if (gen_bus in zone_members)
-                    push!(gen_zones, zone)
-                end
-            end
+            push!(gen_areas, found_area)
+            push!(gen_zones, found_zone)
         end
         push!(comp_dict, "area" => gen_areas)
         push!(comp_dict, "zone" => gen_zones)
@@ -1000,190 +1079,206 @@ function parse_EGRET_generator(components::DICT,mapping_dict::Dict{Any,Any},area
     if ~(haskey(comp_dict, "mbase"))
         push!(comp_dict, "mbase" => fill(baseMVA,length(comp_dict["p_max"])))
     end
-    
+
     df = DataFrames.DataFrame(comp_dict)
-    
+
     # Export CSV
     csv_path = joinpath(dir_name,"gen.csv")
     CSV.write(csv_path, df,writeheader = true,transform = (col, val) -> something(val, missing))
-    
+
     @info "Successfully parsed generators in the JSON."
     return gen_ts_flag
 end
 #####################################################################################
 # Main Function to parse EGRET JSON
 #####################################################################################
-function parse_egretjson(EGRET_json_DA::DICT;EGRET_json_RT::Union{Nothing, DICT} = nothing,
-                         export_location::Union{Nothing, String} = nothing) where {DICT <: Dict} 
-    
-    # Checks
+#####################################################################################
+# Internal helper: validate DA JSON, create output directory, parse buses/branches/generators
+#####################################################################################
+function _parse_egret_components(EGRET_json_DA::DICT, export_location::Union{Nothing, String}) where {DICT <: AbstractDict}
     if (~(haskey(EGRET_json_DA, "elements")) || ~(haskey(EGRET_json_DA, "system")))
         error("Please check the EGRET DA System JSON")
     end
 
-    if (EGRET_json_RT !== nothing)
-
-        if (~(haskey(EGRET_json_RT, "elements")) || ~(haskey(EGRET_json_RT, "system")))
-            error("Please check the EGRET RT System JSON")
-        end
-    end
-
-    #kwargs handling
     if (export_location === nothing)
-        export_location =dirname(dirname(@__DIR__))
-        @warn  "Location to save the exported tabular data not specified. Using the Converted_CSV_Files folder of the module."
+        export_location = dirname(dirname(@__DIR__))
+        @warn "Location to save the exported tabular data not specified. Using the Converted_CSV_Files folder of the module."
     end
-    
-    dt_now = Dates.format(Dates.now(),"dd-u-yy-H-M-S");
-    dir_name = joinpath(export_location,"data","Converted_CSV_Files",dt_now,EGRET_json_DA["system"]["name"])
+
+    dt_now = Dates.format(Dates.now(), "dd-u-yy-H-M-S")
+    dir_name = joinpath(export_location, "data", "Converted_CSV_Files", dt_now, get(EGRET_json_DA["system"], "name",""))
 
     if (~isdir(dir_name))
         mkpath(dir_name)
     end
-    
-    # Parsing different elements in EGRET System
-    # Bus
-    bus_mapping_dict, area_mapping_dict, zone_mapping_dict, load_ts_flag = 
+
+    bus_mapping_dict, area_mapping_dict, zone_mapping_dict, load_ts_flag =
     if haskey(EGRET_json_DA["elements"], "bus")
         @info "Parsing buses in EGRET JSON..."
-        if (haskey(EGRET_json_DA["elements"], "shunt"))
-            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name,EGRET_json_DA["elements"],shunt = EGRET_json_DA["elements"]["shunt"])
+        if haskey(EGRET_json_DA["elements"], "shunt")
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"], EGRET_json_DA["elements"]["load"], dir_name, EGRET_json_DA["elements"], shunt = EGRET_json_DA["elements"]["shunt"])
         else
-            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"],EGRET_json_DA["elements"]["load"],dir_name, EGRET_json_DA["elements"])
+            parse_EGRET_bus(EGRET_json_DA["elements"]["bus"], EGRET_json_DA["elements"]["load"], dir_name, EGRET_json_DA["elements"])
         end
     else
         error("No buses in the EGRET DA System JSON")
     end
 
-    # Branch
     if haskey(EGRET_json_DA["elements"], "branch")
         @info "Parsing branches in EGRET JSON..."
-        parse_EGRET_branch(EGRET_json_DA["elements"]["branch"],bus_mapping_dict,dir_name)
+        parse_EGRET_branch(EGRET_json_DA["elements"]["branch"], bus_mapping_dict, dir_name)
     else
         error("No branches in the EGRET DA System JSON")
     end
 
-    # Generator
-    gen_ts_flag = 
+    gen_ts_flag =
     if haskey(EGRET_json_DA["elements"], "generator")
         @info "Parsing generators in EGRET JSON..."
-        parse_EGRET_generator(EGRET_json_DA["elements"]["generator"],bus_mapping_dict,area_mapping_dict, zone_mapping_dict,dir_name,
+        parse_EGRET_generator(EGRET_json_DA["elements"]["generator"], bus_mapping_dict, area_mapping_dict, zone_mapping_dict, dir_name,
                               EGRET_json_DA["system"]["baseMVA"])
     else
         error("No generators in the EGRET DA System JSON")
     end
 
-    # Calling time series processing functions
-    rt_flag = 
-    if (load_ts_flag && gen_ts_flag)
-        if (EGRET_json_RT !== nothing)
-            @info "Parsing time series of loads and generators and generating time series metadata for DA and RT Systems..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                    gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict,
-                                    areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"],
-                                    gen_components_RT=EGRET_json_RT["elements"]["generator"])
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
-                                       loads_DA = EGRET_json_DA["elements"]["load"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
-                                       area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],
-                                       loads_RT = EGRET_json_RT["elements"]["load"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
-            end
-        else
-            @info "Parsing time series of loads and generators and generating time series metadata for DA System..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
-                loads_DA = EGRET_json_DA["elements"]["load"],gen_components_DA=EGRET_json_DA["elements"]["generator"],area_bus_mapping_dict=area_mapping_dict)
-            end
-           
-        end
+    return dir_name, area_mapping_dict, load_ts_flag, gen_ts_flag
+end
+
+# Select the areas argument for time_series_processing
+_areas_da(EGRET_json_DA::AbstractDict, area_mapping_dict::AbstractDict) =
+    haskey(EGRET_json_DA["elements"], "area") ?
+    EGRET_json_DA["elements"]["area"] :
+    sort(string.(collect(keys(area_mapping_dict))))
+
+#####################################################################################
+# parse_egretjson - DA only (Dict)
+#####################################################################################
+function parse_egretjson(EGRET_json_DA::DICT;
+                         export_location::Union{Nothing, String} = nothing) where {DICT <: AbstractDict}
+    dir_name, area_mapping_dict, load_ts_flag, gen_ts_flag =
+        _parse_egret_components(EGRET_json_DA, export_location)
+
+    areas_DA = _areas_da(EGRET_json_DA, area_mapping_dict)
+
+    rt_flag =
+    if load_ts_flag && gen_ts_flag
+        @info "Parsing time series of loads and generators and generating time series metadata for DA System..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               loads_DA = EGRET_json_DA["elements"]["load"],
+                               gen_components_DA = EGRET_json_DA["elements"]["generator"],
+                               area_bus_mapping_dict = area_mapping_dict)
     elseif load_ts_flag
-        if (EGRET_json_RT !== nothing)
-            @info "Parsing time series of loads and generating time series metadata for DA and RT Systems..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                   area_bus_mapping_dict=area_mapping_dict,areas_RT = EGRET_json_RT["elements"]["area"],
-                                   system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
-                                       loads_DA = EGRET_json_DA["elements"]["load"],area_bus_mapping_dict=area_mapping_dict,
-                                       areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],loads_RT = EGRET_json_RT["elements"]["load"])
-            end   
-        else
-            @info "Parsing time series of loads and generating time series metadata for DA System..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                   area_bus_mapping_dict=area_mapping_dict)
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],loads_DA = EGRET_json_DA["elements"]["load"],
-                                   area_bus_mapping_dict=area_mapping_dict)
-            end
-            
-        end
+        @info "Parsing time series of loads and generating time series metadata for DA System..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               loads_DA = EGRET_json_DA["elements"]["load"],
+                               area_bus_mapping_dict = area_mapping_dict)
     elseif gen_ts_flag
-        if (EGRET_json_RT !== nothing)
-            @info "Parsing time series of generators and generating time series metadata for DA and RT Systems..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"],
-                                   areas_RT = EGRET_json_RT["elements"]["area"],system_RT=EGRET_json_RT["system"],
-                                   gen_components_RT=EGRET_json_RT["elements"]["generator"])
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
-                                       gen_components_DA=EGRET_json_DA["elements"]["generator"],areas_RT = EGRET_json_RT["elements"]["area"],
-                                       system_RT=EGRET_json_RT["system"],gen_components_RT=EGRET_json_RT["elements"]["generator"])
-            end
-        else
-            @info "Parsing time series of generators and generating time series metadata for DA System..."
-            if (haskey(EGRET_json_DA["elements"], "area"))
-                time_series_processing(dir_name,EGRET_json_DA["elements"]["area"],EGRET_json_DA["system"],gen_components_DA=EGRET_json_DA["elements"]["generator"])
-            else
-                time_series_processing(dir_name,sort(string.(collect(keys(area_mapping_dict)))),EGRET_json_DA["system"],
-                                       gen_components_DA=EGRET_json_DA["elements"]["generator"])
-            end
-        end
+        @info "Parsing time series of generators and generating time series metadata for DA System..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               gen_components_DA = EGRET_json_DA["elements"]["generator"])
     else
         @warn "No generator and load time series data available in the EGRET DA JSON"
+        false
     end
 
     @info "Successfully generated CSV files compatible with Sienna PSY tabular data parser here : $(dir_name)."
-
-    return dir_name, EGRET_json_DA["system"]["baseMVA"],rt_flag
+    return dir_name, EGRET_json_DA["system"]["baseMVA"], rt_flag
 end
 
-
-function parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
-                         export_location::Union{Nothing, String} = nothing) 
-    
-    # Initial Checks
-    if (~isjson(EGRET_json_DA_location))
-        error("Please check the EGRET DA System JSON location passed, make sure it is a JSON file.")
+#####################################################################################
+# parse_egretjson - DA + RT (Dict)
+#####################################################################################
+function parse_egretjson(EGRET_json_DA::DICT, EGRET_json_RT::DICT;
+                         export_location::Union{Nothing, String} = nothing) where {DICT <: AbstractDict}
+    if (~(haskey(EGRET_json_RT, "elements")) || ~(haskey(EGRET_json_RT, "system")))
+        error("Please check the EGRET RT System JSON")
     end
 
-    EGRET_json_DA = 
-    try 
-        JSON.parsefile(EGRET_json_DA_location)
+    dir_name, area_mapping_dict, load_ts_flag, gen_ts_flag =
+        _parse_egret_components(EGRET_json_DA, export_location)
+
+    areas_DA = _areas_da(EGRET_json_DA, area_mapping_dict)
+
+    rt_flag =
+    if load_ts_flag && gen_ts_flag
+        @info "Parsing time series of loads and generators and generating time series metadata for DA and RT Systems..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               loads_DA = EGRET_json_DA["elements"]["load"],
+                               gen_components_DA = EGRET_json_DA["elements"]["generator"],
+                               area_bus_mapping_dict = area_mapping_dict,
+                               areas_RT = EGRET_json_RT["elements"]["area"],
+                               system_RT = EGRET_json_RT["system"],
+                               loads_RT = EGRET_json_RT["elements"]["load"],
+                               gen_components_RT = EGRET_json_RT["elements"]["generator"])
+    elseif load_ts_flag
+        @info "Parsing time series of loads and generating time series metadata for DA and RT Systems..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               loads_DA = EGRET_json_DA["elements"]["load"],
+                               area_bus_mapping_dict = area_mapping_dict,
+                               areas_RT = EGRET_json_RT["elements"]["area"],
+                               system_RT = EGRET_json_RT["system"],
+                               loads_RT = EGRET_json_RT["elements"]["load"])
+    elseif gen_ts_flag
+        @info "Parsing time series of generators and generating time series metadata for DA and RT Systems..."
+        time_series_processing(dir_name, areas_DA, EGRET_json_DA["system"],
+                               gen_components_DA = EGRET_json_DA["elements"]["generator"],
+                               areas_RT = EGRET_json_RT["elements"]["area"],
+                               system_RT = EGRET_json_RT["system"],
+                               gen_components_RT = EGRET_json_RT["elements"]["generator"])
+    else
+        @warn "No generator and load time series data available in the EGRET DA JSON"
+        false
+    end
+
+    @info "Successfully generated CSV files compatible with Sienna PSY tabular data parser here : $(dir_name)."
+    return dir_name, EGRET_json_DA["system"]["baseMVA"], rt_flag
+end
+
+#####################################################################################
+# parse_egretjson - DA only (String path)
+#####################################################################################
+function parse_egretjson(EGRET_json_DA_location::String;
+                         export_location::Union{Nothing, String} = nothing)
+    if (~isjson(EGRET_json_DA_location))
+        error("Please check the EGRET DA System JSON location passed, make sure it is a .json or .json.gz file.")
+    end
+
+    EGRET_json_DA =
+    try
+        parse_json_file(EGRET_json_DA_location)
     catch
         error("Cannot parse the EGRET DA System JSON.")
     end
 
-    EGRET_json_RT = nothing
-    if (EGRET_json_RT_location !== nothing)
+    parse_egretjson(EGRET_json_DA, export_location = export_location)
+end
 
-        if (~isjson(EGRET_json_RT_location))
-            error("Please check the EGRET RT System JSON location passed, make sure it is a JSON file.")
-        end
-
-        EGRET_json_RT = 
-        try 
-            JSON.parsefile(EGRET_json_RT_location)
-        catch
-            error("Cannot parse the EGRET RT System JSON.")
-        end
+#####################################################################################
+# parse_egretjson - DA + RT (String paths)
+#####################################################################################
+function parse_egretjson(EGRET_json_DA_location::String, EGRET_json_RT_location::String;
+                         export_location::Union{Nothing, String} = nothing)
+    if (~isjson(EGRET_json_DA_location))
+        error("Please check the EGRET DA System JSON location passed, make sure it is a .json or .json.gz file.")
     end
 
-    parse_egretjson(EGRET_json_DA, EGRET_json_RT = EGRET_json_RT, export_location = export_location)
+    if (~isjson(EGRET_json_RT_location))
+        error("Please check the EGRET RT System JSON location passed, make sure it is a .json or .json.gz file.")
+    end
+
+    EGRET_json_DA =
+    try
+        parse_json_file(EGRET_json_DA_location)
+    catch
+        error("Cannot parse the EGRET DA System JSON.")
+    end
+
+    EGRET_json_RT =
+    try
+        parse_json_file(EGRET_json_RT_location)
+    catch
+        error("Cannot parse the EGRET RT System JSON.")
+    end
+
+    parse_egretjson(EGRET_json_DA, EGRET_json_RT, export_location = export_location)
 end
 
