@@ -88,6 +88,17 @@ function _resolve_fuel!(mapping::Dict{String,String}, fuel::String, default::Str
     mapping[fuel] = default
     return default
 end
+# Return the time-series values vector from a p_load/q_load field.
+# Scalar loads are broadcast to a constant vector of length n_timesteps.
+function _load_ts_values(p_load_field, n_timesteps::Int)
+    if p_load_field isa Number
+        return fill(Float64(p_load_field), n_timesteps)
+    elseif p_load_field isa AbstractDict
+        return Float64.(get(p_load_field, "values", zeros(n_timesteps)))
+    else
+        return zeros(Float64, n_timesteps)
+    end
+end
 # Extract maximum load value from a p_load/q_load field that is either
 # a scalar Number or a {"values": [...]} time-series dict.
 function _load_max(load_dict::AbstractDict, key::String)
@@ -383,7 +394,7 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
 
     for (key,val) in gen_components_DA
         if ~(haskey(val, "unit_type"))
-            val["unit_type"] = val["fuel"]
+            val["unit_type"] = get(val, "fuel", "THERMAL")
         end
     end
     #=
@@ -684,8 +695,9 @@ function time_series_processing(dir_name::String,areas_DA::Union{DICT,Vector{Str
             reg_load_max_vals = []
             for key in keys(area_bus_mapping_dict)
                 area_loads = filter(!isnothing,get.(Ref(loads_dict[load_key][1]),area_bus_mapping_dict[key],nothing)) # cannot directly broacast without filter because not all buses have loads
-                filtered_area_load_vals  = get.(get.(area_loads,"p_load",0),"values",0)
-                sum_area_load = sum(filtered_area_load_vals)
+                n_ts = length(loads_dict[load_key][2])
+                filtered_area_load_vals  = [_load_ts_values(get(l, "p_load", 0), n_ts) for l in area_loads]
+                sum_area_load = sum(filtered_area_load_vals; init=zeros(Float64, n_ts))
                 push!(reg_load_max_vals, maximum(sum_area_load))
 
                 df[!,string(key)] = sum_area_load
