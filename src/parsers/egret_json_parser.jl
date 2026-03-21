@@ -336,7 +336,8 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
             comp_fields["fuel"] = _resolve_fuel!(fuel_mapping, string(fuel), string(fuel))
         end
         if !haskey(comp_fields, "unit_type")
-            comp_fields["unit_type"] = get(comp_fields, "fuel", "THERMAL")
+            raw_fuel = string(get(comp_fields, "fuel", "THERMAL"))
+            comp_fields["unit_type"] = _resolve_fuel!(fuel_pm_mapping, raw_fuel, "THERMAL")
         end
     end
 
@@ -407,7 +408,9 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
             name             = gen_name,
             bus_name         = bus_name,
             fuel             = string(get(comp_fields, "fuel", "OTHER")),
+            fuel_code        = string(get(comp_fields, "fuel_code", "")),
             unit_type        = string(get(comp_fields, "unit_type", "THERMAL")),
+            model_type       = string(get(comp_fields, "model_type", "")),
             p_max_mw         = p_max_mw,
             p_min_mw         = p_min_mw,
             p_max_ts         = p_max_ts,   # raw EGRET dict if time-varying, else nothing

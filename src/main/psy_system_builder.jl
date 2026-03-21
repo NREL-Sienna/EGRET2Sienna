@@ -45,26 +45,60 @@ const _BUSTYPE_MAP = Dict{String, PSY.ACBusTypes}(
 )
 
 #####################################################################################
-# Determine PSY generator type from fuel + unit_type
+# Determine PSY generator type from fuel / fuel_code / unit_type / model_type / generator_type
 #####################################################################################
-function _gen_psy_type(fuel::String, unit_type::String, p_max_mw::Float64)::String
-    fu = uppercase(fuel)
-    ut = uppercase(unit_type)
-    if p_max_mw < 0
+function _gen_psy_type(gen)::String
+    fu = uppercase(gen.fuel)
+    fc = uppercase(gen.fuel_code)
+    ut = uppercase(gen.unit_type)
+    mt = uppercase(gen.model_type)
+    gt = lowercase(gen.generator_type)
+
+    if gen.p_max_mw < 0
         return "HydroPumpedStorage"
-    elseif fu == "HYDRO" || ut in ("HYDRO", "ROR")
+    elseif fu == "HYDRO" || fc == "HYDRO" || ut in ("HYDRO", "ROR") || mt in ("HYDRO", "ROR")
         return "HydroDispatch"
-    elseif fu == "SOLAR" || fu == "WIND"
-        if ut == "RTPV"
-            return "RenewableNonDispatch"
-        else
-            return "RenewableDispatch"
-        end
-    elseif fu == "STORAGE"
+    elseif fu in ("SOLAR", "WIND") || fc in ("SOLAR", "WIND") ||
+           ut in ("PV", "RTPV", "WIND", "SOLAR") ||
+           mt in ("PV", "RTPV", "WT", "PVF", "PVE") ||
+           gt in ("renewable", "solar", "wind", "pv")
+        return mt == "RTPV" || ut == "RTPV" ? "RenewableNonDispatch" : "RenewableDispatch"
+    elseif fu == "STORAGE" || mt in ("STORAGE", "BATTERY")
         return "EnergyReservoirStorage"
     else
         return "ThermalStandard"
     end
+end
+
+const _MODEL_TYPE_TO_PRIME_MOVER = Dict{String, PSY.PrimeMovers}(
+    "WT"   => PSY.PrimeMovers.WT,
+    "PV"   => PSY.PrimeMovers.PVe,
+    "PVE"  => PSY.PrimeMovers.PVe,
+    "PVF"  => PSY.PrimeMovers.PVe,
+    "RTPV" => PSY.PrimeMovers.PVe,
+    "HYDRO" => PSY.PrimeMovers.HY,
+    "ROR"   => PSY.PrimeMovers.HY,
+    "PS"    => PSY.PrimeMovers.PS,
+)
+
+# Infer prime mover using model_type first, then unit_type, then name heuristics.
+function _infer_prime_mover(gen)::PSY.PrimeMovers
+    mt = uppercase(gen.model_type)
+    haskey(_MODEL_TYPE_TO_PRIME_MOVER, mt) && return _MODEL_TYPE_TO_PRIME_MOVER[mt]
+    ut = uppercase(gen.unit_type)
+    haskey(_UNIT_TYPE_TO_PRIME_MOVER, ut) && return _UNIT_TYPE_TO_PRIME_MOVER[ut]
+    fc = titlecase(gen.fuel_code)
+    haskey(_UNIT_TYPE_TO_PRIME_MOVER, uppercase(fc)) && return _UNIT_TYPE_TO_PRIME_MOVER[uppercase(fc)]
+    # Name-based fallback for renewables with generic metadata
+    name_up = uppercase(gen.name)
+    bus_up  = uppercase(something(gen.bus_name, ""))
+    if occursin("WIND", name_up) || occursin("WIND", bus_up)
+        return PSY.PrimeMovers.WT
+    elseif occursin("PV", name_up) || occursin("SOLAR", name_up) ||
+           occursin("PV", bus_up) || occursin("SOLAR", bus_up)
+        return PSY.PrimeMovers.PVe
+    end
+    return PSY.PrimeMovers.OT
 end
 
 #####################################################################################
@@ -239,8 +273,8 @@ function _build_generators!(sys::PSY.System, generators, base_MVA::Float64)
         time_limits = (gen.min_up_time_h > 0 || gen.min_down_time_h > 0) ?
                       (up=gen.min_up_time_h, down=gen.min_down_time_h) : nothing
 
-        psy_type = _gen_psy_type(gen.fuel, gen.unit_type, gen.p_max_mw)
-        prime_mover = get(_UNIT_TYPE_TO_PRIME_MOVER, gen.unit_type, PSY.PrimeMovers.OT)
+        psy_type = _gen_psy_type(gen)
+        prime_mover = _infer_prime_mover(gen)
         @debug "Determined $(gen.name) as $psy_type with pm $prime_mover"
 
         if psy_type == "ThermalStandard"
@@ -375,7 +409,7 @@ function _build_reserves!(sys::PSY.System, system_dict::AbstractDict,
     up_reserves = collect(PSY.get_components(PSY.VariableReserve{PSY.ReserveUp}, sys))
     down_reserves = collect(PSY.get_components(PSY.VariableReserve{PSY.ReserveDown}, sys))
     for gen in generators
-        psy_type = _gen_psy_type(gen.fuel, gen.unit_type, gen.p_max_mw)
+        psy_type = _gen_psy_type(gen)
         psy_type in ("ThermalStandard", "HydroDispatch", "HydroPumpedStorage") || continue
         component = PSY.get_component(PSY.Generator, sys, gen.name)
         isnothing(component) && continue
