@@ -1,44 +1,96 @@
 # EGRET2Sienna.jl
-## A Julia Package to convert EGRET System JSON to tabular data (RTS-GMLC format) and make a Sienna PSY System.
+
+## A Julia Package to convert EGRET System JSON directly to a Sienna PowerSystems.jl System
 
 ## Introduction
+
 **Module Capabilities**
-* The module has functionality to convert a EGRET System JSON (currently DA Is supported) to tabular data formatted for the SIIP PSY tabular data parser.
-* The module also has a capability to build a Sienna PSY System from the converted tabular data. 
 
-## Usage at a Glance
+* Parses EGRET System JSON (day-ahead and/or real-time) and directly constructs `PowerSystems.System` objects — no intermediate CSV files required.
+* Supports DA-only and DA+RT workflows, with optional JSON serialization of the resulting systems.
+* Handles distributed buses, time-varying generator capacity, and area-aggregated load time series.
 
-The test folder has a test script on how to use the module. A basic usage of this module would look something like this.
+## Installation
 
-**Function Specifications**
-
-* parse_egretjson() - takes three arguments (two optional), the EGRET System JSON location/s and location to save converted CSV files (optional) 
-
-This function converts the EGRET System JSON to a tabular data format which can be used with SIIP tabular data parser. It follows a similar folder organization to RTS-GMLC SourceData. 
+```julia
+using Pkg
+Pkg.add(url="https://github.com/NREL/EGRET2SIIP")
 ```
-parse_egretjson(EGRET_json_DA_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
-                export_location::Union{Nothing, String} = nothing)
-```
-**NOTE: If location to save the converted CSV files isn't specified, the module will use the 'Converted_CSV_Files' folder in the 'Data' folder of the repo.
 
-* parse_sienna_tabular_data() - takes five arguments, the folder with converted tabular data, base MVA of the System and others.
+## Usage
 
-This function makes Sienna PSY System from converted tabular data.
-```
-parse_sienna_tabular_data(csv_dir::String,base_MVA::Float64,rt_flag::Bool;ts_pointers_file::Union{Nothing, String} = nothing, serialize = false) 
-```
-**NOTE: csv_dir and base MVA are the outputs of parse_egretjson().
-* egret_to_sienna() - takes five arguments (four optional), the EGRET System JSON location and location to save converted CSV files among others (optional) 
+### One-step: EGRET JSON → PSY System
 
-This function combines the functionality of both the functions above.
+```julia
+using EGRET2Sienna
+
+# DA only
+sys = egret_to_sienna("path/to/da_system.json")
+
+# DA + RT
+sys_DA, sys_RT = egret_to_sienna("path/to/da_system.json", "path/to/rt_system.json")
+
+# With serialization (writes <label>_system.json to export_location)
+sys = egret_to_sienna("path/to/da_system.json";
+                      serialize=true,
+                      export_location="path/to/output/")
 ```
-egret_to_sienna(EGRET_json_location::String;EGRET_json_RT_location::Union{Nothing, String} = nothing,
-                export_location::Union{Nothing, String} = nothing,ts_pointers_file::Union{Nothing, String} = nothing, serialize = false)
+
+You can also pass pre-loaded dicts instead of file paths:
+
+```julia
+import JSON
+da_dict = JSON.parsefile("path/to/da_system.json")
+sys = egret_to_sienna(da_dict)
+
+da_dict = JSON.parsefile("path/to/da_system.json")
+rt_dict = JSON.parsefile("path/to/rt_system.json")
+sys_DA, sys_RT = egret_to_sienna(da_dict, rt_dict)
+```
+
+### Two-step: parse then build
+
+```julia
+# Parse EGRET JSON into an intermediate data structure
+data = parse_egretjson("path/to/da_system.json")
+# or: data = parse_egretjson("path/to/da_system.json", "path/to/rt_system.json")
+
+# Build PSY System(s) from parsed data
+using EGRET2Sienna: build_psy_system
+sys_DA = build_psy_system(data; ts_label="DAY_AHEAD")
+sys_RT = build_psy_system(data; ts_label="REAL_TIME")  # only if rt_flag is set
+```
+
+## Function Reference
+
+### `egret_to_sienna`
+
+Parses EGRET JSON and returns a `PowerSystems.System` (DA only) or a `(sys_DA, sys_RT)` tuple.
+
+```julia
+egret_to_sienna(EGRET_json_location::String;
+                export_location::Union{Nothing, String} = nothing,
+                serialize::Bool = false)
+
+egret_to_sienna(EGRET_json_DA::String, EGRET_json_RT::String;
+                export_location::Union{Nothing, String} = nothing,
+                serialize::Bool = false)
+```
+
+Dict variants accept any `AbstractDict` in place of file path strings.
+
+### `parse_egretjson`
+
+Parses one or two EGRET JSON files (or dicts) and returns a `NamedTuple` containing all static and time-series data needed to build a `PSY.System`. Useful when you want to inspect the parsed data before building.
+
+```julia
+parse_egretjson(EGRET_json_location::String)
+parse_egretjson(EGRET_json_DA::String, EGRET_json_RT::String)
 ```
 
 ## Acknowledgments
-This code was developed as part of North American Energy Resiliency Project (NAERM). We would like to thank DOE for the support and Clayton Barrows, Daniel Thom, JP Watson, Amelia Musselman and Darryl Melander for their guidance!
+This code was developed as part of the North American Energy Resiliency Project (NAERM). We would like to thank DOE for the support and Clayton Barrows, Daniel Thom, JP Watson, Amelia Musselman and Darryl Melander for their guidance!
 
-The developers are : [Surya Dhulipala](https://github.nrel.gov/sdhulipa).
+The developers are: [Surya Dhulipala](https://github.nrel.gov/sdhulipa).
 
-Please reach out if you have any questions on how to use the module, need assistance or need some more information on modeling assumptions.
+Please reach out if you have any questions on how to use the module, need assistance, or need more information on modeling assumptions.
