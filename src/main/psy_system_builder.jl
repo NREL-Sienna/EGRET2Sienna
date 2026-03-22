@@ -218,7 +218,7 @@ function _build_branches!(sys::PSY.System, branches, base_MVA::Float64)
         end
         arc = PSY.Arc(from=from_bus, to=to_bus)
 
-        rating_pu = br.rating_mva > 0 ? br.rating_mva / base_MVA : Inf
+        rating_pu = br.rating_mva > 0 ? br.rating_mva / base_MVA : 0.0
 
         if PSY.get_base_voltage(from_bus) != PSY.get_base_voltage(to_bus)
             PSY.add_component!(sys,
@@ -234,18 +234,21 @@ function _build_branches!(sys::PSY.System, branches, base_MVA::Float64)
                     base_MVA,
                 ))
         else
-            PSY.add_component!(sys,
-                PSY.Line(
-                    br.name,
-                    true,
-                    0.0, 0.0,
-                    arc,
-                    br.r,
-                    br.x,
-                    (from=br.b/2, to=br.b/2),
-                    rating_pu,
-                    (min=-π/2, max=π/2),
-                ))
+            line = PSY.Line(
+                br.name,
+                true,
+                0.0, 0.0,
+                arc,
+                br.r,
+                br.x,
+                (from=br.b/2, to=br.b/2),
+                rating_pu,
+                (min=-π/2, max=π/2),
+            )
+            if rating_pu == 0.0
+                line.rating = PSY.line_rating_calculation(line)
+            end
+            PSY.add_component!(sys, line)
         end
     end
 end
@@ -427,11 +430,10 @@ end
 #####################################################################################
 function _attach_gen_timeseries!(sys::PSY.System, generators,
                                   timestamps::Vector{Dates.DateTime})
-    ts_unit_types = ("HYDRO", "PV", "RTPV", "WIND")
-
     for gen in generators
         gen.p_max_ts === nothing && continue
-        uppercase(gen.unit_type) in ts_unit_types || continue
+        psy_type = _gen_psy_type(gen)
+        psy_type in ("HydroDispatch", "RenewableDispatch", "RenewableNonDispatch") || continue
 
         component = PSY.get_component(PSY.Generator, sys, gen.name)
         isnothing(component) && continue
@@ -443,13 +445,17 @@ function _attach_gen_timeseries!(sys::PSY.System, generators,
         vals = raw_vals[1:n]
         ts_stamps = timestamps[1:n]
 
-        p_max_pu = PSY.get_max_active_power(component)
-        if p_max_pu == 0.0
-            @warn "Generator $(gen.name) has max_active_power = 0; skipping time series."
-            continue
+        # Use the component's max_active_power * base_power as the normalizer.
+        # If it is zero (e.g. p_max_mw was 0 for a time-varying generator),
+        # fall back to the maximum value in the time series itself.
+        scale = PSY.get_max_active_power(component) * PSY.get_base_power(sys)
+        if scale == 0.0
+            scale = maximum(vals)
+            scale == 0.0 && continue   # all-zero time series — skip
+            PSY.set_max_active_power!(component, scale / PSY.get_base_power(sys))
         end
 
-        normalized = vals ./ (p_max_pu * PSY.get_base_power(sys))
+        normalized = vals ./ scale
         ta = TimeSeries.TimeArray(ts_stamps, normalized)
         ts = PSY.SingleTimeSeries(
             name = "max_active_power",
@@ -461,7 +467,7 @@ function _attach_gen_timeseries!(sys::PSY.System, generators,
 end
 
 #####################################################################################
-# Attach area-aggregated load time series to Area components
+# Attach load time series directly to PowerLoad components
 #####################################################################################
 function _attach_load_timeseries!(sys::PSY.System, buses, loads_dict::AbstractDict,
                                    area_bus_mapping::Dict,
@@ -469,38 +475,47 @@ function _attach_load_timeseries!(sys::PSY.System, buses, loads_dict::AbstractDi
                                    base_MVA::Float64)
     n_ts = length(timestamps)
 
-    # Remap area_bus_mapping to use load keys (load names) instead of bus names
-    for (area_name, bus_names) in area_bus_mapping
-        # Collect all loads in this area
-        area_load_vals = zeros(Float64, n_ts)
-        for bus_name in bus_names
-            # Find loads associated with this bus
-            for (_, load_rec) in loads_dict
-                get(load_rec, "bus", nothing) == bus_name || continue
-                p_load = get(load_rec, "p_load", nothing)
-                area_load_vals .+= _load_ts_values(p_load, n_ts)
+    for bus in buses
+        # Find the load record for this bus
+        load_rec = nothing
+        for (_, rec) in loads_dict
+            if get(rec, "bus", nothing) == bus.name
+                load_rec = rec
+                break
             end
         end
+        isnothing(load_rec) && continue
 
-        max_val = maximum(area_load_vals)
+        p_load = get(load_rec, "p_load", nothing)
+        vals = _load_ts_values(p_load, n_ts)
+
+        max_val = maximum(vals)
         max_val == 0.0 && continue
 
-        area_obj = PSY.get_component(PSY.Area, sys, area_name)
-        isnothing(area_obj) && continue
+        peak_pu = max_val / base_MVA
+        load_obj = PSY.get_component(PSY.PowerLoad, sys, "Load_" * bus.name)
+        if isnothing(load_obj)
+            # Bus had zero static load but has a time-varying profile — create the component now
+            psy_bus = PSY.get_component(PSY.ACBus, sys, bus.name)
+            isnothing(psy_bus) && continue
+            load_obj = PSY.PowerLoad("Load_" * bus.name, true, psy_bus,
+                                     peak_pu, 0.0, base_MVA, peak_pu, 0.0)
+            PSY.add_component!(sys, load_obj)
+        else
+            PSY.set_max_active_power!(load_obj, peak_pu)
+        end
 
-        # Set peak_active_power on area (used as scaling factor)
-        area_obj.peak_active_power = max_val / base_MVA
-
-        normalized = area_load_vals ./ max_val
+        normalized = vals ./ max_val
         ta = TimeSeries.TimeArray(timestamps, normalized)
         ts = PSY.SingleTimeSeries(
             name = "max_active_power",
             data = ta,
-            scaling_factor_multiplier = PSY.get_peak_active_power,
+            scaling_factor_multiplier = PSY.get_max_active_power,
         )
-        PSY.add_time_series!(sys, area_obj, ts)
+        PSY.add_time_series!(sys, load_obj, ts)
     end
 end
+
 
 #####################################################################################
 # Attach reserve time series
@@ -603,7 +618,7 @@ function build_psy_system(data;
         _attach_gen_timeseries!(sys, data.generators, timestamps)
     end
 
-    if data.load_ts_flag && !isnothing(timestamps) && !isempty(timestamps) && !isnothing(loads)
+    if !isnothing(timestamps) && !isempty(timestamps) && !isnothing(loads)
         _attach_load_timeseries!(sys, data.buses, loads, data.area_bus_mapping,
                                   timestamps, data.base_MVA)
     end
