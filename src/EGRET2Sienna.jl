@@ -3,12 +3,12 @@
 Copyright 2021 Alliance for Sustainable Energy and other
 NAERM Project Developers. See the top-level COPYRIGHT file for details.
 
-Author: Surya Chandan Dhulipala
-Email: suryachandan.dhulipala@nrel.gov
+Author: Surya Chandan Dhulipala & Clayton Barrows
+Email: suryachandan.dhulipala@nlr.gov & Clayton.Barrows@nlr.gov
 """
-# October 2023
+# March 2026
 # EGRET --> Sienna Linkage Module
-# EGRET JSON --> CSV files formatted according to Sienna Tabular Data Parser Requirements --> Sienna PSY System
+# EGRET JSON --> EGRETData Intermediate Format --> Sienna PSY System
 #######################################################
 module EGRET2Sienna
 #################################################################################

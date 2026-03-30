@@ -1,7 +1,8 @@
 name = "EGRET2Sienna"
 uuid = "f4eccc7a-2a5e-4df9-9560-548aa10067ea"
 version = "3.0.0"
-authors = ["Surya Chandan Dhulipala <suryachandan.dhulipala@nrel.gov>"]
+authors = ["Surya Chandan Dhulipala <suryachandan.dhulipala@nrel.gov>",
+           "Clayton Barrows <Clayton.Barrows@nlr.gov>"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
