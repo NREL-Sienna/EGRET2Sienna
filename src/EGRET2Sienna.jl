@@ -15,20 +15,20 @@ module EGRET2Sienna
 # Exports
 #################################################################################
 export parse_egretjson
-export parse_sienna_tabular_data
 export egret_to_sienna
 #################################################################################
 # Imports
 #################################################################################
+import GZip
 import JSON
-import DataFrames
-import CSV
 import Dates
+import TimeSeries
 import PowerSystems
+const PSY = PowerSystems
 #################################################################################
 # Includes
 #################################################################################
-include("parsers/egret_json_to_csv.jl")
-include("main/parse_tabular_data.jl")
+include("parsers/egret_json_parser.jl")
+include("main/psy_system_builder.jl")
 include("main/egret_to_psy.jl")
 end
