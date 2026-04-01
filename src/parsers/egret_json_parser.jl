@@ -118,22 +118,34 @@ end
 # Extract timestamps from an EGRET system dict
 #####################################################################################
 function _parse_timestamps(system_dict::AbstractDict)
-    date_format = Dates.DateFormat("Y-m-d H:M")
-    try
-        return Dates.DateTime.(system_dict["time_keys"], date_format)
-    catch
-        n = length(system_dict["time_keys"])
-        @warn "System timestamps in EGRET JSON are not formatted correctly. Assuming default hourly timestamps."
-        start = Dates.DateTime("2024-01-01", Dates.DateFormat("Y-m-d"))
-        return collect(StepRange(start, Dates.Hour(1), start + Dates.Hour(n - 1)))
+    keys = get(system_dict, "time_keys", nothing)
+    isnothing(keys) || isempty(keys) && return Dates.DateTime[]
+
+    # Try common EGRET timestamp formats in order of specificity
+    for fmt in (
+        Dates.DateFormat("Y-m-d H:M:S"),   # "2020-07-10 00:00:00"
+        Dates.DateFormat("Y-m-dTH:M:S"),   # "2020-07-10T00:00:00"
+        Dates.DateFormat("Y-m-d H:M"),     # "2020-07-10 00:00"
+        Dates.DateFormat("Y-m-dTH:M"),     # "2020-07-10T00:00"
+    )
+        try
+            return Dates.DateTime.(keys, fmt)
+        catch
+        end
     end
+
+    n = length(keys)
+    @warn "Could not parse time_keys from EGRET JSON (first key: \"$(keys[1])\"). " *
+          "Falling back to synthetic hourly timestamps."
+    start = Dates.DateTime("2024-01-01", Dates.DateFormat("Y-m-d"))
+    return collect(StepRange(start, Dates.Hour(1), start + Dates.Hour(n - 1)))
 end
 
 #####################################################################################
 # Parse EGRET Bus elements → Vector of NamedTuples + mapping dicts
 #####################################################################################
-function _parse_buses(components::DICT, loads::AbstractDict, elements::AbstractDict;
-                      shunt::Union{Nothing, AbstractDict} = nothing) where {DICT <: AbstractDict}
+function _parse_buses(components::AbstractDict, loads::AbstractDict;
+                      shunt::Union{Nothing, AbstractDict} = nothing)
 
     # Ensure every bus has an integer id
     if !all(haskey.(values(components), "id"))
@@ -144,25 +156,10 @@ function _parse_buses(components::DICT, loads::AbstractDict, elements::AbstractD
 
     comp_names = collect(keys(components))
 
-    # Build bus_type vector (may not be in JSON)
+    # Build bus_type vector (may not be in JSON); first bus is the reference
     if !haskey(first(values(components)), "matpower_bustype")
-        gens_dict  = get(elements, "generator", Dict())
-        loads_dict = get(elements, "load",      Dict())
-        bus_types  = String[]
         for (i, bus_name) in enumerate(comp_names)
-            load_idx = findfirst(get.(values(loads_dict), "bus", nothing) .== bus_name)
-            gen_idx  = findfirst(get.(values(gens_dict),  "bus", nothing) .== bus_name)
-            t = if i == 1
-                "ref"
-            elseif isnothing(load_idx) && isnothing(gen_idx)
-                "PQ"
-            else
-                "PQ"
-            end
-            push!(bus_types, t)
-        end
-        for (bus_name, t) in zip(comp_names, bus_types)
-            components[bus_name]["matpower_bustype"] = t
+            components[bus_name]["matpower_bustype"] = i == 1 ? "ref" : "PQ"
         end
     end
 
@@ -238,7 +235,7 @@ end
 #####################################################################################
 # Parse EGRET Branch elements → Vector of NamedTuples
 #####################################################################################
-function _parse_branches(components::DICT) where {DICT <: AbstractDict}
+function _parse_branches(components::AbstractDict)
     branches = map(collect(pairs(components))) do (branch_name, branch)
         tap = get(branch, "transformer_tap_ratio", nothing)
         tap_val = (tap isa Number && tap != 0) ? Float64(tap) : 0.0
@@ -315,9 +312,9 @@ end
 #####################################################################################
 # Parse EGRET Generator elements → Vector of NamedTuples
 #####################################################################################
-function _parse_generators(components::DICT, bus_name_to_id::Dict,
+function _parse_generators(components::AbstractDict,
                             area_bus_mapping::Dict, zone_bus_mapping::Dict,
-                            base_MVA::Float64) where {DICT <: AbstractDict}
+                            base_MVA::Float64)
 
     # ── Ensure unit_type is present ──────────────────────────────────────────────
     if !all(haskey.(values(components), "unit_type"))
@@ -366,6 +363,17 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
         # ── bus, area, zone ──────────────────────────────────────────────────────
         bus_raw  = get(comp_fields, "bus", nothing)
         bus_name = _resolve_bus(bus_raw)
+
+        # Capture full participation map for distributed buses
+        distributed_buses = if bus_raw isa AbstractDict &&
+                               get(bus_raw, "data_type", "") == "distributed_bus"
+            values_dict = get(bus_raw, "values", nothing)
+            (values_dict isa AbstractDict && !isempty(values_dict)) ?
+                Dict{String, Float64}(string(k) => Float64(v) for (k, v) in values_dict) :
+                nothing
+        else
+            nothing
+        end
 
         area_name = let a = get(comp_fields, "area", nothing)
             if !isnothing(a)
@@ -428,6 +436,7 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
             shutdown_cost    = Float64(get(comp_fields, "shutdown_cost", 0.0)),
             fuel_cost_per_mmbtu = fuel_cost,
             heat_rate_io     = hr_points,  # Vector of (x=MW, y=MMBTU/hr)
+            rating_mw        = Float64(get(comp_fields, "rating", p_max_mw)),
             mbase_mva        = Float64(get(comp_fields, "mbase", base_MVA)),
             pg_mw            = Float64(get(comp_fields, "pg", 0.0)),
             qg_mvar          = Float64(get(comp_fields, "qg", 0.0)),
@@ -436,6 +445,8 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
             area_name        = area_name,
             zone_name        = zone_name,
             generator_type   = string(get(comp_fields, "generator_type", get(comp_fields, "unit_type", "thermal"))),
+            reservoir_name   = gen_name,
+            distributed_buses = distributed_buses,
         )
     end
 
@@ -465,15 +476,15 @@ function parse_egretjson(EGRET_json_DA::DICT;
 
     @info "Parsing buses in EGRET JSON..."
     shunt = get(elements, "shunt", nothing)
-    buses, bus_to_id, area_bus_mapping, zone_bus_mapping, load_ts_flag =
-        _parse_buses(elements["bus"], elements["load"], elements; shunt = shunt)
+    buses, _, area_bus_mapping, zone_bus_mapping, load_ts_flag =
+        _parse_buses(elements["bus"], elements["load"]; shunt = shunt)
 
     @info "Parsing branches in EGRET JSON..."
     branches = _parse_branches(elements["branch"])
 
     @info "Parsing generators in EGRET JSON..."
     generators, gen_ts_flag = _parse_generators(
-        elements["generator"], bus_to_id, area_bus_mapping, zone_bus_mapping, base_MVA)
+        elements["generator"], area_bus_mapping, zone_bus_mapping, base_MVA)
 
     timestamps_DA = _parse_timestamps(EGRET_json_DA["system"])
     areas_DA      = _areas_da(EGRET_json_DA, area_bus_mapping)
