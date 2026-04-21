@@ -29,6 +29,7 @@ const PSY = PowerSystems
 # Includes
 #################################################################################
 include("parsers/egret_json_parser.jl")
+include("parsers/EGRETData.jl")
 include("main/psy_system_builder.jl")
 include("main/egret_to_psy.jl")
 end

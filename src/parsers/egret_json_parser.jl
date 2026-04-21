@@ -1,5 +1,5 @@
 #####################################################################################
-# Surya / NREL — refactored by C. Barrows
+# Surya / NLR — refactored by C. Barrows
 # Parses EGRET JSON into structured Julia data for direct PSY system construction.
 # Replaces egret_json_to_csv.jl — no CSV output.
 #####################################################################################
@@ -103,17 +103,17 @@ function _load_ts_values(p_load_field, n_timesteps::Int)
 end
 
 isjson(path::String) = endswith(path, ".json") || endswith(path, ".json.gz")
+json_parsing_kwargs = (allownan = true, ninf = "-Inf", inf = "Inf", nan = "NaN")
 
 function parse_json_file(path::String)
     if endswith(path, ".json.gz")
         GZip.open(path, "r") do io
-            JSON.parse(String(read(io)))
+            JSON.parse(read(io);json_parsing_kwargs...)
         end
     else
-        JSON.parsefile(path)
+        JSON.parsefile(path;json_parsing_kwargs...)
     end
 end
-
 #####################################################################################
 # Extract timestamps from an EGRET system dict
 #####################################################################################
@@ -478,7 +478,7 @@ function parse_egretjson(EGRET_json_DA::DICT;
     timestamps_DA = _parse_timestamps(EGRET_json_DA["system"])
     areas_DA      = _areas_da(EGRET_json_DA, area_bus_mapping)
 
-    return (
+    return EGRETData(
         base_MVA         = base_MVA,
         rt_flag          = false,
         buses            = buses,
@@ -514,14 +514,8 @@ function parse_egretjson(EGRET_json_DA::DICT, EGRET_json_RT::DICT;
     timestamps_RT = _parse_timestamps(EGRET_json_RT["system"])
     rt_elements   = EGRET_json_RT["elements"]
 
-    return merge(data, (
-        rt_flag       = true,
-        system_RT     = EGRET_json_RT["system"],
-        loads_RT      = get(rt_elements, "load",      Dict()),
-        gen_elements_RT = get(rt_elements, "generator", Dict()),
-        areas_RT      = get(rt_elements, "area",      nothing),
-        timestamps_RT = timestamps_RT,
-    ))
+    return update_rt_data!(data, system_RT, loads_RT, gen_elements_RT, areas_RT, timestamps_RT)
+    
 end
 
 #####################################################################################
