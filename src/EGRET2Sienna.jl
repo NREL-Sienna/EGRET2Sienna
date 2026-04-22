@@ -25,6 +25,7 @@ import Dates
 import TimeSeries
 import PowerSystems
 import HDF5
+import UUIDs
 const PSY = PowerSystems
 #################################################################################
 # Includes

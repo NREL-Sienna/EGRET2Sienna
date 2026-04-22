@@ -460,6 +460,11 @@ function parse_egretjson(EGRET_json_DA::DICT;
         error("Please check the EGRET DA System JSON — missing 'elements' or 'system' key.")
     end
 
+    if !haskey(EGRET_json_DA["system"], "uuid")
+        @warn "System doesn't have a UUID assigned. Assigning a random UUID for export purposes. Consider adding a persistent UUID to your EGRET system JSON."
+        EGRET_json_DA["system"]["uuid"] = string(UUIDs.uuid4())
+    end
+
     elements = EGRET_json_DA["elements"]
     base_MVA = Float64(EGRET_json_DA["system"]["baseMVA"])
 
