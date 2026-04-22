@@ -108,7 +108,7 @@ json_parsing_kwargs = (allownan = true, ninf = "-Inf", inf = "Inf", nan = "NaN")
 function parse_json_file(path::String)
     if endswith(path, ".json.gz")
         GZip.open(path, "r") do io
-            JSON.parse(String(read(io));json_parsing_kwargs...)
+            JSON.parse(read(io);json_parsing_kwargs...)
         end
     else
         JSON.parsefile(path;json_parsing_kwargs...)
