@@ -24,6 +24,7 @@ import JSON
 import Dates
 import TimeSeries
 import PowerSystems
+import HDF5
 const PSY = PowerSystems
 #################################################################################
 # Includes

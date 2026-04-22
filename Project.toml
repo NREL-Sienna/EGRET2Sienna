@@ -1,16 +1,17 @@
 name = "EGRET2Sienna"
 uuid = "f4eccc7a-2a5e-4df9-9560-548aa10067ea"
+authors = ["Surya Chandan Dhulipala <suryachandan.dhulipala@nrel.gov>", "Clayton Barrows <Clayton.Barrows@nlr.gov>"]
 version = "3.0.0"
-authors = ["Surya Chandan Dhulipala <suryachandan.dhulipala@nrel.gov>",
-           "Clayton Barrows <Clayton.Barrows@nlr.gov>"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 
 [compat]
+HDF5 = "0.17.2"
 PowerSystems = "^5.0"
 julia = "^1.8"
