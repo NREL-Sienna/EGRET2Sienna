@@ -534,7 +534,28 @@ function parse_egretjson(EGRET_json_DA_location::String;
     if !isjson(EGRET_json_DA_location)
         error("DA System file must be a .json or .json.gz file: $EGRET_json_DA_location")
     end
+   
+    base_name = first(split(basename(EGRET_json_DA_location), "."))
+    h5_path = joinpath(dirname(EGRET_json_DA_location), "$(base_name)_time_series.h5")
+
+    if isfile(h5_path)
+        @info "Found associated HDF5 time series file: $h5_path. Parsing available time series data from HDF5."
+        fid, ds_ts, ds_uid, ds_values = parse_h5_timeseries(h5_path)
+        h5_flag = true
+    else
+        # Set your defaults
+        h5_flag = false
+        fid = nothing
+        ds_ts = nothing
+        ds_uid = nothing
+        ds_values = nothing
+    end
+    
     parse_egretjson(parse_json_file(EGRET_json_DA_location); export_location = export_location)
+
+    if h5_flag
+        close(fid)
+    end
 end
 
 #####################################################################################
@@ -553,4 +574,24 @@ function parse_egretjson(EGRET_json_DA_location::String, EGRET_json_RT_location:
         parse_json_file(EGRET_json_RT_location);
         export_location = export_location,
     )
+end
+
+#####################################################################################
+# Parse h5 file and function to get chunks of data from the h5 file
+#####################################################################################
+function parse_h5_timeseries(path::String)
+    fid = HDF5.h5open(path, "r")
+
+    ds_ts = fid["timestamp"]
+    ds_uid = fid["uid"]
+    ds_values = fid["values"]
+
+    return fid, ds_ts, ds_uid, ds_values
+
+    close(fid)
+end
+
+function get_chunk(ds_uid, ds_values, ts_uid)
+    asset_idx = findfirst(fid["uid"][:] .== ts_uid)
+    return ds_values[asset_idx, :]
 end
