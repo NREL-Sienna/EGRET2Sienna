@@ -249,7 +249,9 @@ function _parse_branches(components::DICT) where {DICT <: AbstractDict}
             r            = Float64(get(branch, "resistance", 0.0)),
             x            = Float64(get(branch, "reactance", 0.001)),
             b            = Float64(get(branch, "charging_susceptance", 0.0)),
-            rating_mva   = Float64(something(get(branch, "rating_long_term", nothing), get(branch, "rating", nothing), 0.0)),
+            rating_mva   = something(get(branch, "rating_long_term", nothing), 0.0) isa Number ?
+                            Float64(something(get(branch, "rating_long_term", nothing), 0.0)) :
+                            minimum(Float64.(something.(get(get(branch, "rating_long_term", Dict()), "values", [0.0]),0.0))),
             tap          = tap_val,
             angle_shift  = Float64(get(branch, "transformer_phase_shift", 0.0)),
             in_service   = Bool(get(branch, "in_service", true)),
@@ -344,6 +346,7 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
     gen_ts_flag = false
 
     generators = map(collect(pairs(components))) do (gen_name, comp_fields)
+        @show gen_name
         # ── p_max / p_min ────────────────────────────────────────────────────────
         p_max_raw = get(comp_fields, "p_max", 0.0)
         if p_max_raw isa AbstractDict
