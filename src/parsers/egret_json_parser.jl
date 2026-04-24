@@ -79,15 +79,19 @@ function _resolve_fuel!(mapping::Dict{String,String}, fuel::String, default::Str
 end
 
 # Return a scalar or max-of-time-series from a p_load/q_load field.
-function _load_max(load_dict::AbstractDict, key::String)
-    val = get(load_dict, key, nothing)
-    if val isa Number
-        return Float64(val)
-    elseif val isa AbstractDict
-        return maximum(Float64.(get(val, "values", [0.0])))
-    else
-        return 0.0
+function _load_max(load_dict::Vector{Any}, key::String)
+    vals = get.(load_dict, key, nothing)
+    sum = 0.0
+    for val in vals
+         if val isa Number
+            sum += Float64(val)
+        elseif val isa AbstractDict
+            sum += maximum(Float64.(get(val, "values", [0.0])))
+        else
+            sum+=0.0
+        end
     end
+    return sum
 end
 
 # Return the time-series values vector from a p_load field.
@@ -138,7 +142,8 @@ end
 # Parse EGRET Bus elements → Vector of NamedTuples + mapping dicts
 #####################################################################################
 function _parse_buses(components::DICT, loads::AbstractDict, elements::AbstractDict;
-                      shunt::Union{Nothing, AbstractDict} = nothing) where {DICT <: AbstractDict}
+                      shunt::Union{Nothing, AbstractDict} = nothing, ds_uid = nothing,
+                      ds_values = nothing) where {DICT <: AbstractDict}
 
     # Ensure every bus has an integer id
     if !all(haskey.(values(components), "id"))
@@ -175,20 +180,38 @@ function _parse_buses(components::DICT, loads::AbstractDict, elements::AbstractD
     load_ts_flag = 0
     bus_mw_load  = Dict{String, Float64}()
     bus_mvar_load = Dict{String, Float64}()
-    bus_load_ts  = Dict{String, AbstractDict}()  # bus_name => raw load dict (if time-series)
+    bus_load_ts  = Dict{String, Dict{String, Any}}()  # bus_name => raw load dict (if time-series)
+    bus_load_ids = Dict{String, Vector{String}}() 
     q_available  = all(haskey.(values(loads), "q_load"))
 
     for bus_name in comp_names
-        idx = findfirst(get.(values(loads), "bus", nothing) .== bus_name)
+        idx = findall(get.(values(loads), "bus", nothing) .== bus_name)
         if !isnothing(idx)
             load_rec = collect(values(loads))[idx]
             bus_mw_load[bus_name]  = _load_max(load_rec, "p_load")
             bus_mvar_load[bus_name] = q_available ? _load_max(load_rec, "q_load") : 0.0
-            p_load_val = get(load_rec, "p_load", nothing)
-            if p_load_val isa AbstractDict
-                load_ts_flag += 1
-                bus_load_ts[bus_name] = load_rec
+            bus_load_ids[bus_name] = get.(load_rec,"id","9999")
+            p_load_vals = get.(load_rec, "p_load", nothing)
+            temp_dict = Dict{String, Any}()
+            for (p_load_val, id) in zip(p_load_vals, get.(load_rec,"id","9999"))
+                if p_load_val isa AbstractDict
+                    if haskey(p_load_val, "time_series_uid") && ds_uid !== nothing
+                         uid = p_load_val["time_series_uid"]
+                         if uid in ds_uid[:]
+                            @info "Load at Bus \"$bus_name\" with ID \"$id\" has a time series UID that is a match in h5 file. Attaching raw load dict for potential time series processing."
+                            ts_values = get_chunk(ds_uid, ds_values, uid)*Float64(get(p_load_val, "scale_factor", 1.0))
+                            temp_dict[id] = ts_values
+                        else
+                            @warn "Load at Bus \"$bus_name\" with ID \"$id\" has a time series UID that doesn't match the HDF5 dataset UID. This load will be skipped for time series attachment."
+                            temp_dict[id] = 0.0
+                        end
+                    end
+                    load_ts_flag += 1
+                else
+                    temp_dict[id] = p_load_val
+                end
             end
+            bus_load_ts[bus_name] = temp_dict
         else
             bus_mw_load[bus_name]  = 0.0
             bus_mvar_load[bus_name] = 0.0
@@ -216,6 +239,7 @@ function _parse_buses(components::DICT, loads::AbstractDict, elements::AbstractD
             shunt_b    = shunt_b,
             shunt_g    = 0.0,
             load_ts    = get(bus_load_ts, bus_name, nothing),  # raw load dict or nothing
+            load_ids   = get(bus_load_ids, bus_name, nothing),  # Vector{String} or nothing
         )
     end
 
@@ -517,7 +541,7 @@ function parse_egretjson(EGRET_json_DA::DICT;
     @info "Parsing buses in EGRET JSON..."
     shunt = get(elements, "shunt", nothing)
     buses, bus_to_id, area_bus_mapping, zone_bus_mapping, load_ts_flag =
-        _parse_buses(elements["bus"], elements["load"], elements; shunt = shunt)
+        _parse_buses(elements["bus"], elements["load"], elements; shunt = shunt, ds_uid = ds_uid, ds_values = ds_values)
 
     @info "Parsing branches in EGRET JSON..."
     branches = _parse_branches(elements["branch"])
