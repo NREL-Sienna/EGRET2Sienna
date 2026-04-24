@@ -117,7 +117,7 @@ end
 #####################################################################################
 # Extract timestamps from an EGRET system dict
 #####################################################################################
-function _parse_timestamps(system_dict::AbstractDict, ds_ts= nothing)
+function _parse_timestamps(system_dict::AbstractDict; ds_ts= nothing)
     if ds_ts !== nothing
         @info "Using timestamps from associated HDF5 time series dataset."
         return Dates.unix2datetime.(ds_ts[:])
@@ -352,13 +352,48 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
     gen_ts_flag = false
 
     generators = map(collect(pairs(components))) do (gen_name, comp_fields)
-        @show gen_name
         # ── p_max / p_min ────────────────────────────────────────────────────────
         p_max_raw = get(comp_fields, "p_max", 0.0)
+        # TODO: Ideally, we want to represent individual units (based on the distributed bus factor)
+        # in RA analysis (because it matters). For now, I will just all the time_series_uid associated with a 
+        # generator and take the sum. This is a bit hacky but it allows us to leverage the time series data in the HDF5 without needing to 
+        # restructure the JSON or PSY system construction logic.
         if p_max_raw isa AbstractDict
-            p_max_vals = Float64.(get(p_max_raw, "values", [0.0]))
-            p_max_mw   = maximum(p_max_vals)
-            p_max_ts   = p_max_raw  # keep raw for time series attachment
+            if haskey(p_max_raw, "time_series_uid") && ds_uid !== nothing
+                uid = p_max_raw["time_series_uid"]
+                if uid isa Vector
+                    @info "Generator \"$gen_name\" has multiple time series UIDs. Attempting to attach time series data from HDF5 based on matching UIDs and summing values if multiple matches are found."
+                    p_max_ts = nothing
+                    p_max_mw = 0.0
+                    for (individual_uid, individual_sf) in zip(uid,p_max_raw["scale_factor"])
+                        if individual_uid in ds_uid[:]
+                            @info "Attaching time series data from HDF5 to generator \"$gen_name\" based on matching UID: $individual_uid."
+                            ts_values = get_chunk(ds_uid, ds_values, individual_uid)
+                            p_max_mw += Float64(individual_sf)  
+                            p_max_ts = isnothing(p_max_ts) ? Dict("values" => ts_values*individual_sf) :
+                                        Dict("values" => (p_max_ts["values"] .+ ts_values*individual_sf))
+                        else
+                            @warn "Generator \"$gen_name\" has a time series UID ($individual_uid) that doesn't match the HDF5 dataset UID. This UID will be skipped for time series attachment."
+                        end
+                    end
+                else
+                    if uid in ds_uid[:]
+                        @info "Attaching time series data from HDF5 to generator \"$gen_name\" based on matching UID."
+                        p_max_ts = Dict("values" => get_chunk(ds_uid, ds_values, uid)*Float64(p_max_raw["scale_factor"]))
+                        p_max_mw = Float64(p_max_raw["scale_factor"]) == 1.0 ? haskey(p_max_raw, "reference_value") ? Float64(p_max_raw["reference_value"]) : maximum(p_max_ts["values"]) :
+                                    maximum(p_max_ts["values"])
+                        gen_ts_flag = true
+                    else
+                        @warn "Generator \"$gen_name\" has a time series UID that doesn't match the HDF5 dataset UID. Building time series data for this generator using values."
+                        p_max_mw = 0.0
+                        p_max_ts = nothing
+                    end
+                end
+            else
+                p_max_vals = Float64.(get(p_max_raw, "values", [0.0]))
+                p_max_mw   = maximum(p_max_vals)
+                p_max_ts   = p_max_raw  # keep raw for time series attachment
+            end
             gen_ts_flag = true
         else
             p_max_mw = Float64(p_max_raw)
@@ -367,7 +402,7 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
 
         p_min_raw = get(comp_fields, "p_min", 0.0)
         if p_min_raw isa AbstractDict
-            p_min_mw = maximum(Float64.(get(p_min_raw, "values", [0.0])))
+            p_min_mw = maximum(Float64.(something(get(p_min_raw, "values", [0.0]),0.0)))
         else
             p_min_mw = Float64(p_min_raw)
         end
@@ -466,7 +501,7 @@ _areas_da(EGRET_json_DA::AbstractDict, area_bus_mapping::AbstractDict) =
 function parse_egretjson(EGRET_json_DA::DICT;
                          export_location::Union{Nothing, String} = nothing,
                          ds_ts= nothing, ds_uid = nothing,
-                         ds_values = nothing) where {DICT <: AbstractDict}
+                         ds_values = nothing, fid = nothing, h5_flag = nothing) where {DICT <: AbstractDict}
     if !haskey(EGRET_json_DA, "elements") || !haskey(EGRET_json_DA, "system")
         error("Please check the EGRET DA System JSON — missing 'elements' or 'system' key.")
     end
@@ -493,6 +528,11 @@ function parse_egretjson(EGRET_json_DA::DICT;
 
     timestamps_DA = _parse_timestamps(EGRET_json_DA["system"], ds_ts = ds_ts)
     areas_DA      = _areas_da(EGRET_json_DA, area_bus_mapping)
+
+    # Close h5 file if open
+    if h5_flag
+        close(fid)
+    end
 
     return EGRETData(
         base_MVA         = base_MVA,
@@ -559,11 +599,7 @@ function parse_egretjson(EGRET_json_DA_location::String;
         ds_values = nothing
     end
     
-    parse_egretjson(parse_json_file(EGRET_json_DA_location); export_location = export_location, ds_ts = ds_ts, ds_uid = ds_uid, ds_values = ds_values)
-
-    if h5_flag
-        close(fid)
-    end
+    parse_egretjson(parse_json_file(EGRET_json_DA_location); export_location = export_location, ds_ts = ds_ts, ds_uid = ds_uid, ds_values = ds_values, fid = fid, h5_flag = h5_flag)
 end
 
 #####################################################################################
@@ -595,11 +631,9 @@ function parse_h5_timeseries(path::String)
     ds_values = fid["values"]
 
     return fid, ds_ts, ds_uid, ds_values
-
-    close(fid)
 end
 
 function get_chunk(ds_uid, ds_values, ts_uid)
-    asset_idx = findfirst(fid["uid"][:] .== ts_uid)
+    asset_idx = findfirst(ds_uid[:] .== ts_uid)
     return ds_values[asset_idx, :]
 end
