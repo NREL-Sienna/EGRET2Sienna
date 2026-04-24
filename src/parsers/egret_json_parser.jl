@@ -117,7 +117,12 @@ end
 #####################################################################################
 # Extract timestamps from an EGRET system dict
 #####################################################################################
-function _parse_timestamps(system_dict::AbstractDict)
+function _parse_timestamps(system_dict::AbstractDict, ds_ts= nothing)
+    if ds_ts !== nothing
+        @info "Using timestamps from associated HDF5 time series dataset."
+        return Dates.unix2datetime.(ds_ts[:])
+    end
+
     date_format = Dates.DateFormat("Y-m-d H:M")
     try
         return Dates.DateTime.(system_dict["time_keys"], date_format)
@@ -319,7 +324,8 @@ end
 #####################################################################################
 function _parse_generators(components::DICT, bus_name_to_id::Dict,
                             area_bus_mapping::Dict, zone_bus_mapping::Dict,
-                            base_MVA::Float64) where {DICT <: AbstractDict}
+                            base_MVA::Float64; ds_uid = nothing,
+                            ds_values = nothing) where {DICT <: AbstractDict}
 
     # ── Ensure unit_type is present ──────────────────────────────────────────────
     if !all(haskey.(values(components), "unit_type"))
@@ -458,7 +464,9 @@ _areas_da(EGRET_json_DA::AbstractDict, area_bus_mapping::AbstractDict) =
 # parse_egretjson — DA only (Dict)
 #####################################################################################
 function parse_egretjson(EGRET_json_DA::DICT;
-                         export_location::Union{Nothing, String} = nothing) where {DICT <: AbstractDict}
+                         export_location::Union{Nothing, String} = nothing,
+                         ds_ts= nothing, ds_uid = nothing,
+                         ds_values = nothing) where {DICT <: AbstractDict}
     if !haskey(EGRET_json_DA, "elements") || !haskey(EGRET_json_DA, "system")
         error("Please check the EGRET DA System JSON — missing 'elements' or 'system' key.")
     end
@@ -481,9 +489,9 @@ function parse_egretjson(EGRET_json_DA::DICT;
 
     @info "Parsing generators in EGRET JSON..."
     generators, gen_ts_flag = _parse_generators(
-        elements["generator"], bus_to_id, area_bus_mapping, zone_bus_mapping, base_MVA)
+        elements["generator"], bus_to_id, area_bus_mapping, zone_bus_mapping, base_MVA, ds_uid = ds_uid, ds_values = ds_values)
 
-    timestamps_DA = _parse_timestamps(EGRET_json_DA["system"])
+    timestamps_DA = _parse_timestamps(EGRET_json_DA["system"], ds_ts = ds_ts)
     areas_DA      = _areas_da(EGRET_json_DA, area_bus_mapping)
 
     return EGRETData(
@@ -551,7 +559,7 @@ function parse_egretjson(EGRET_json_DA_location::String;
         ds_values = nothing
     end
     
-    parse_egretjson(parse_json_file(EGRET_json_DA_location); export_location = export_location)
+    parse_egretjson(parse_json_file(EGRET_json_DA_location); export_location = export_location, ds_ts = ds_ts, ds_uid = ds_uid, ds_values = ds_values)
 
     if h5_flag
         close(fid)
