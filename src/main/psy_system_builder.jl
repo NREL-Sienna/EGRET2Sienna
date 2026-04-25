@@ -186,18 +186,20 @@ function _build_buses!(sys::PSY.System, buses, base_MVA::Float64)
         PSY.add_component!(sys, psy_bus)
 
         # Add PowerLoad if bus has static load
-        if bus.mw_load > 0
-            load = PSY.PowerLoad(
-                "Load_" * bus.name,
+        if !isempty(bus.load_ids)
+            for id in bus.load_ids
+                load = PSY.PowerLoad(
+                "Load_" * bus.name * "_" * string(id),
                 true,
                 psy_bus,
-                bus.mw_load   / base_MVA,
-                bus.mvar_load / base_MVA,
+                maximum(bus.load_ts[id])   / base_MVA,
+                bus.mvar_load / base_MVA, # TODO: Need to fix this to get Q for corresponding load, not an issue for now
                 base_MVA,
-                bus.mw_load   / base_MVA,
-                bus.mvar_load / base_MVA,
-            )
-            PSY.add_component!(sys, load)
+                maximum(bus.load_ts[id])   / base_MVA,
+                bus.mvar_load / base_MVA, # TODO: Need to fix this to get Q for corresponding load, not an issue for now
+                )
+                PSY.add_component!(sys, load)
+            end
         end
     end
 end
@@ -486,25 +488,17 @@ function _attach_load_timeseries!(sys::PSY.System, buses, loads_dict::AbstractDi
         end
         isnothing(load_rec) && continue
 
-        p_load = get(load_rec, "p_load", nothing)
-        vals = _load_ts_values(p_load, n_ts)
+        load_ts = getfield(bus,Symbol("load_ts"))
+        load_id = load_rec["id"]
+        vals = load_ts[load_id] isa Number ? fill(load_ts[load_id], n_ts) : Float64.(load_ts[load_id])
 
         max_val = maximum(vals)
         max_val == 0.0 && continue
 
         peak_pu = max_val / base_MVA
-        load_obj = PSY.get_component(PSY.PowerLoad, sys, "Load_" * bus.name)
-        if isnothing(load_obj)
-            # Bus had zero static load but has a time-varying profile — create the component now
-            psy_bus = PSY.get_component(PSY.ACBus, sys, bus.name)
-            isnothing(psy_bus) && continue
-            load_obj = PSY.PowerLoad("Load_" * bus.name, true, psy_bus,
-                                     peak_pu, 0.0, base_MVA, peak_pu, 0.0)
-            PSY.add_component!(sys, load_obj)
-        else
-            PSY.set_max_active_power!(load_obj, peak_pu)
-        end
-
+        load_obj = PSY.get_component(PSY.PowerLoad, sys, "Load_" * bus.name * "_" * string(load_id))
+        PSY.set_max_active_power!(load_obj, peak_pu)
+        
         normalized = vals ./ max_val
         ta = TimeSeries.TimeArray(timestamps, normalized)
         ts = PSY.SingleTimeSeries(
