@@ -96,13 +96,21 @@ end
 
 # Return the time-series values vector from a p_load field.
 # Scalar loads are broadcast to a constant vector of length n_timesteps.
-function _load_ts_values(p_load_field, n_timesteps::Int)
-    if p_load_field isa Number
-        return fill(Float64(p_load_field), n_timesteps)
-    elseif p_load_field isa AbstractDict
-        return Float64.(get(p_load_field, "values", zeros(n_timesteps)))
+function _fill_monthly_timeseries(p_max_raw::AbstractDict; num_ts = nothing)
+    num_ts = isnothing(num_ts) ? 8760 : num_ts
+    monthly_vals = Float64.(get(p_max_raw, "values", [0.0]))
+    if length(monthly_vals) == 12
+        # Repeat the 12 monthly values to create an hourly time series (8760 hours in a non-leap year)
+        if num_ts != 8760
+            @warn "Expected num_ts to be 8760 for hourly data, but got $num_ts. Adjusting repeat factor accordingly."
+            return vcat(repeat(monthly_vals, inner=Int(8760/12)),fill(monthly_vals[12], num_ts-8760))
+        else
+            @info "Repeating 12 monthly values to create a time series of length $num_ts."
+            return repeat(monthly_vals, inner=Int(8760/12))
+        end
     else
-        return zeros(Float64, n_timesteps)
+        @warn "Expected 12 monthly values for p_max but got $(length(monthly_vals)). Returning zero time series."
+        return zeros(Float64, num_ts)
     end
 end
 
@@ -349,7 +357,7 @@ end
 function _parse_generators(components::DICT, bus_name_to_id::Dict,
                             area_bus_mapping::Dict, zone_bus_mapping::Dict,
                             base_MVA::Float64; ds_uid = nothing,
-                            ds_values = nothing) where {DICT <: AbstractDict}
+                            ds_values = nothing, num_ts = nothing) where {DICT <: AbstractDict}
 
     # ── Ensure unit_type is present ──────────────────────────────────────────────
     if !all(haskey.(values(components), "unit_type"))
@@ -414,9 +422,17 @@ function _parse_generators(components::DICT, bus_name_to_id::Dict,
                     end
                 end
             else
+                # Handle monthly or other time-varying p_max
                 p_max_vals = Float64.(get(p_max_raw, "values", [0.0]))
                 p_max_mw   = maximum(p_max_vals)
-                p_max_ts   = p_max_raw  # keep raw for time series attachment
+                if length(p_max_vals) ==12 
+                    @info "Generator \"$gen_name\" has time-varying p_max values but no time_series_uid. Building time series data for this generator using persistent values."
+                    p_max_ts = Dict("values" => _fill_monthly_timeseries(p_max_raw, num_ts = num_ts))  # build a 8760-length time series by repeating the 12 monthly values
+                else
+                    @warn "Generator \"$gen_name\" has time-varying p_max values but no time_series_uid. However, there are $(length(p_max_vals)) values which doesn't match expected 12 for monthly data. Building time series data for this generator using persistent values."
+                    p_max_ts   = p_max_raw  # keep raw for time series attachment
+                end
+                
             end
             gen_ts_flag = true
         else
@@ -546,11 +562,12 @@ function parse_egretjson(EGRET_json_DA::DICT;
     @info "Parsing branches in EGRET JSON..."
     branches = _parse_branches(elements["branch"])
 
+    timestamps_DA = _parse_timestamps(EGRET_json_DA["system"], ds_ts = ds_ts)
+
     @info "Parsing generators in EGRET JSON..."
     generators, gen_ts_flag = _parse_generators(
-        elements["generator"], bus_to_id, area_bus_mapping, zone_bus_mapping, base_MVA, ds_uid = ds_uid, ds_values = ds_values)
+        elements["generator"], bus_to_id, area_bus_mapping, zone_bus_mapping, base_MVA, ds_uid = ds_uid, ds_values = ds_values, num_ts = length(timestamps_DA))
 
-    timestamps_DA = _parse_timestamps(EGRET_json_DA["system"], ds_ts = ds_ts)
     areas_DA      = _areas_da(EGRET_json_DA, area_bus_mapping)
 
     # Close h5 file if open

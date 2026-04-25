@@ -56,7 +56,7 @@ function _gen_psy_type(gen)::String
 
     if gen.p_max_mw < 0
         return "HydroPumpedStorage"
-    elseif fu == "HYDRO" || fc == "HYDRO" || ut in ("HYDRO", "ROR") || mt in ("HYDRO", "ROR")
+    elseif fu == "HYDRO" || fc == "HYDRO" || ut in ("HYDRO", "ROR") || mt in ("HYDRO", "ROR", "HY")
         return "HydroDispatch"
     elseif fu in ("SOLAR", "WIND") || fc in ("SOLAR", "WIND") ||
            ut in ("PV", "RTPV", "WIND", "SOLAR") ||
