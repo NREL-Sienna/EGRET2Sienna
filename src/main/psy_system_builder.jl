@@ -477,16 +477,11 @@ function _attach_load_timeseries!(sys::PSY.System, buses, loads_dict::AbstractDi
                                    base_MVA::Float64)
     n_ts = length(timestamps)
 
-    for bus in buses
-        # Find the load record for this bus
-        load_rec = nothing
-        for (_, rec) in loads_dict
-            if get(rec, "bus", nothing) == bus.name
-                load_rec = rec
-                break
-            end
-        end
-        isnothing(load_rec) && continue
+    for (_, load_rec) in loads_dict
+        bus_name = get(load_rec, "bus", nothing)
+        isnothing(bus_name) && continue
+        idx = findfirst(b -> b.name == bus_name, buses)
+        bus = buses[idx]
 
         load_ts = getfield(bus,Symbol("load_ts"))
         load_id = load_rec["id"]
